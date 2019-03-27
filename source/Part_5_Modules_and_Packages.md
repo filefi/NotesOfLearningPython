@@ -47,7 +47,7 @@ Python 标准库提供了一系列的预先编写好的模块。
 
 下图是一个包含有三个文件的Python程序的草图。文件a是顶层文件，在运行时将会从上至下执行其中的语句；文件b和文件c是模块，通常模块中的语句并不直接运行。
 
-![1553614087306](_static/images/Part_5_Modules_and_Packages.assets/1553614087306.png)
+![](_static/images/Part_5_Modules_and_Packages.assets/1553614087306.png)
 
 导入的概念贯穿了Python，任何文件都能从任何其他文件中导入其工具。例如，模块a导入了模块b，模块b导入了模块c，模块c又导入了其他模块。这就形成了 ***导入链*** 。
 
