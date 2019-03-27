@@ -829,7 +829,7 @@ StopIteration
 
 此外，一些对象既是迭代上下文工具（iteration context tool）（它们能够迭代）又是可迭代对象（它们的结果是可迭代的）——包括生成器表达式（generator expressions），以及Python 3.X中的`map`和`zip`。 正如我们将要看到的，为了避免立即在内存中构建结果列表，在Python 3.X中更多工具变为可迭代的，——包括`map`，`zip`，`range`和一些字典方法。
 
-![图14-1](第三部分-语句和语法.assets/1549211942807.png)
+![图14-1](_static/images/Part_3_Statements_and_Syntax.assets/1549211942807.png)
 
 > **个人理解：在迭代时，内置函数`iter`会调用可迭代对象的`__iter__`方法来生成并返回一个迭代器。这个迭代器的`__next__`方法会被内置函数`next`调用；并且当迭代完成时，这个迭代器会引发`StopIteration`异常。**
 

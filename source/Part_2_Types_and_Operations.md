@@ -2865,7 +2865,7 @@ False
 
 #### Python的类型层次
 
-![1549032875654](Part_2_Types_and_Operations.assets/1549032875654.png)
+![1549032875654](_static/images/Part_2_Types_and_Operations.assets/1549032875654.png)
 
 #### Type对象
 
