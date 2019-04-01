@@ -104,6 +104,7 @@ Python在程序启动时，会自动根据以上4个路径组件对`sys.path`进
 Python会选择在搜索路径中第一个符合导入文件名的文件。
 
 > 如果在相同目录中找到`b.py`和`b.so`，会发生什么事？
+>
 > 答：建议在同一目录中保持模块名唯一！
 
 #### 导入钩子（import hook）和ZIP文件
@@ -130,12 +131,100 @@ Python 也支持优化字节码文件`.pyo`。这种文件在创建和执行时�
 
 
 ### 23.2 模块的使用
+#### import语句
+import语句使用一个变量名引用整个模块对象，所以必须通过模块名称来得到该模块的属性：
+```python
+>>> import module1               # Get module as a whole (one or more)
+>>> module1.printer('Hello world!')      # Qualify to get names
+Hello world!
+```
+
+#### from语句
+from语句会把变量名复制到另一个作用域，所以它就可以让我们直接在脚本中使用复制后的变量名，而不需要通过模块：
+```python
+>>> from module1 import printer # Copy out a variable (one or more)
+>>> printer('Hello world!') # No need to qualify name
+Hello world!
+```
+
+#### from \* 语句
+使用`*`时，会取得模块顶层所有赋了值的变量名的拷贝。
+```python
+>>> from module1 import * # Copy out _all_ variables
+>>> printer('Hello world!')
+Hello world!
+```
+
+#### import和from是赋值语句
+就像`def`一样，`import`和`from`是可执行的语句，而不是编译期间的声明，而且它们可以嵌套在`if`测试中，出现在函数`def`之中等，直到Python程序执行到这些语句时才会进行解析。
+
+和`def`一样，`import`和`from`都是隐性的赋值语句：
+- `import`将整个模块对象赋值给一个变量名。
+- `from`将一个或多个变量名赋值给另一个模块中同名的对象。
+
+之前讨论过的关于赋值语句方面的内容，也适用于模块的导入。例如，以from复制的变量名会变成对共享对象的引用。思考下面的small.py模块。
+```python
+x = 1
+y = [1, 2]
+```
+
+```python
+% python
+>>> from small import x, y # Copy two names out
+>>> x = 42 # Changes local x only
+>>> y[0] = 42 # Changes shared mutable in place
+```
+
+此处，x并不是一个共享的可变对象，但y是。导入者中的变量名y和被导入者都引用相同的列表对象，所以在其中一个地方的修改，也会影响另一个地方的这个对象。
+```python
+>>> import small # Get module name (from doesn't)
+>>> small.x # Small's x is not my x
+1
+>>> small.y # But we share a changed mutable
+[42, 2]
+```
+
+#### 跨文件变量名的改变
+```python
+% python
+>>> from small import x, y # Copy two names out
+>>> x = 42 # Changes my x only
+```
+以from复制而来的变量名和其来源的的文件之间是没有关系的。为了实际修改另一个文件中的全局变量名，必须使用import：
+```python
+>>> import small # Get module name
+>>> small.x = 42 # Changes x in other module
+```
+
+> 注意：这与前一小节中对`y[0]`的修改是不同的。这里修改了一个对象`small`，而不是一个变量名。
+
+
+#### import和from的等价性
+from只是把变量名从一个模块复制到另一个模块，并不会对模块名本身进行赋值。所以我们需要在from后执行import语句，来获取模块的变量名。从概念上来讲，一个像这样的from语句：
+```python
+from module import name1, name2 # Copy these two names out (only)
+```
+与下面这些语句是等效的：
+```python
+import module # Fetch the module object
+name1 = module.name1 # Copy names out by assignment
+name2 = module.name2
+del module # Get rid of the module name
+```
+
+#### from语句潜在的陷阱
+`from module import *`形式会把一个命名空间融入到另一个，所以会使得模块的命名空间的分割特性失效。
 
 
 ### 23.3 模块的命名空间
+简而言之，模块就是命名空间，而存在于模块之内的变量名就是模块对象的属性。
+
+#### 文件生成命名空间
+那么，文件是如何变为命名空间的呢？简而言之，在模块文件顶层（也就是不在函数或类的主体内）每一个赋值了的变量名都会变成该模块的属性。
 
 
 ### 23.4 重载模块
+
 
 ---
 
