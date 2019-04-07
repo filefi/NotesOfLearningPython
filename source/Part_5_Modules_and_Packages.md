@@ -315,7 +315,9 @@ print(mod2.mod3.X) # Nested mod3's X
 
 `imp`模块的`reload`函数会强制已加载的模块的代码重新载入并重新执行。此文件中新的代码的赋值语句会在适当的地方修改现有的模块对象。
 
-**为什么要这么麻烦去重载模块？`imp.reload`函数可以修改程序的一些部分，而无须停止整个程序。因此，利用`imp.reload`函数，可以立即看到对组件的修改的效果。**
+> In Python 3.7.2, the `imp` module is deprecated in favour of `importlib`; see the module's documentation for alternative uses.
+
+**为什么要这么麻烦去重载模块？`reload`函数可以修改程序的一些部分，而无须停止整个程序。因此，利用`reload`函数，可以立即看到对组件的修改的效果。**
 
 #### reload基础
 
@@ -340,17 +342,317 @@ print(mod2.mod3.X) # Nested mod3's X
 
 ---
 
-
 ## 第24章 模块包
+
+除了模块名之外，导入也可以指定目录路径。Python代码的目录就称为 ***包*** ，因此，这类导入就称为 ***包导入***。
+
+实际上，包导入是把计算机上的目录变成另一个Python命名空间，而属性则对应于目录中所包含的子目录和模块文件。
+
 ### 24.1 包导入基础
 
+```python
+import dir1.dir2.mod
+```
+
+```python
+from dir1.dir2.mod import x
+```
+
+假设，目录`dir1`所在的目录（即`dir1`的父目录）是`dir0`，则目录`dir0`必须存在于`sys.path`模块搜索路径中。
+
+#### `__init__.py`包文件
+
+使用包导入必须遵循一条约束：包导入语句的路径中的每个目录内都必须存在`__init__.py`这个文件，否则导入包会失败。
+
+也就是说，上面的例子中：
+
+- 目录`dir1`和`dir2`内都必须包含`__init__.py`这个文件。
+- 而目录`dir1`的父目录`dir0`则不需要包含`__init__.py`文件；如果包含，也会被忽略。
+- 目录`dir0`必须存在于模块搜索路径`sys.path`中。
+
+结果就是，这个例子的目录结构应该是这样的：  
+
+```
+root@localhost# tree dir0 -v
+dir0
+└── dir1
+    ├── __init__.py
+    └── dir2
+        ├── __init__.py
+        └── mod.py
+
+2 directories, 3 files
+root@localhost#
+```
+
+`__init__.py`文件可以包含Python程序代码，就像普通模块文件一样，但也可以是空文件。
+
+通常情况下，`__init__.py`文件扮演了包初始化的钩子、替目录产生模块命名空间以及使用目录导入时实现`from *`（即`from xxx import *`）行为的角色：
+
+- **包的初始化**：Python首次导入某个目录时，会自动执行该目录下`__init__.py`文件中的所有程序代码。所以，该文件可以放置包内文件所需要初始化的代码。
+- **模块命名空间初始化**：
+- **`from *`语句的行为**：作为一个高级功能，你可以在`__init__.py`文件内使用`__all__`列表来定义包（目录）以`from *`形式导入时应该导入什么。如果没有设定`__all__`，`from *`语句不会自动加载嵌套于该目录内的子模块，而是只加载该目录的`__init__.py`文件中赋值语句定义的变量名（包括该文件中程序代码明确导入的子模块）。
+
+
+
 ### 24.2 包导入实例
+有如下目录结构：
+```
+root@localhost# tree dir0 -v
+dir0
+└── dir1
+    ├── __init__.py
+    └── dir2
+        ├── __init__.py
+        └── mod.py
+
+2 directories, 3 files
+root@localhost#
+```
+
+其中文件`dir1\__init__.py`包含如下内容：
+```python
+# dir1\__init__.py
+print('dir1 init')
+x = 1
+```
+
+其中文件`dir1\dir2\__init__.py`包含如下内容：
+```python
+# dir1\dir2\__init__.py
+print('dir2 init')
+y = 2
+```
+
+其中文件`dir1\dir2\mod.py`包含如下内容：
+```python
+# dir1\dir2\mod.py
+print('in mod.py')
+z = 3
+```
+
+将`dir1`目录的父目录`dir0`添加入模块搜索路径：
+```python
+Python 3.7.2 (default, Mar 25 2019, 20:38:07)
+[GCC 5.4.0 20160609] on linux
+Type "help", "copyright", "credits" or "license" for more information.
+>>> import sys
+>>> sys.path.append('/mnt/c/dir0')
+```
+
+开始导入包（目录）中的模块：
+```python
+>>> import dir1.dir2.mod      # 第一次导入时，会遍历包（目录），并运行各个包（目录）中的__init__.py
+dir1 init
+dir2 init
+in mod.py
+>>> import dir1.dir2.mod         # 重复导入则不会运行__init__.py
+>>> import imp
+__main__:1: DeprecationWarning: the imp module is deprecated in favour of importlib; see the module's documentation for alternative uses
+>>> imp.reload(dir1)              # 使用reload函数重载包（目录）dir1
+dir1 init
+<module 'dir1' from '/mnt/c/dir0/dir1/__init__.py'>
+>>>
+>>> imp.reload(dir1.dir2)          # 使用reload函数重载包（目录）dir2
+dir2 init
+<module 'dir1.dir2' from '/mnt/c/dir0/dir1/dir2/__init__.py'>
+>>> imp.reload(dir1.dir2.mod)      # 使用reload函数重载模块mod
+in mod.py
+<module 'dir1.dir2.mod' from '/mnt/c/dir0/dir1/dir2/mod.py'>
+```
+
+也可以单独导入某个包（目录）：
+```python
+>>> import dir1         # 首次单独导入包（目录）时，只会触发该目录的__init__.py
+dir1 init
+>>> import dir1.dir2    # 首次单独导入包（目录）时，只会触发该目录的__init__.py
+dir2 init
+>>> import dir1.dir2.mod   # 首次导入包中的模块也会执行该模块
+in mod.py
+>>> import dir1         # 重复导入包（目录），则不会触发执行该目录的__init__.py
+>>> import dir1.dir2    # 重复导入包（目录），则不会触发执行该目录的__init__.py
+>>> import dir1.dir2.mod   # 重复导入则不会执行该模块
+>>>
+```
+
+包（目录）的重载不会遍历其子包（目录）：
+```python
+>>> import imp
+__main__:1: DeprecationWarning: the imp module is deprecated in favour of importlib; see the module's documentation for alternative uses
+>>> imp.reload(dir1)
+dir1 init
+<module 'dir1' from '/mnt/c/dir0/dir1/__init__.py'>
+>>>
+>>> imp.reload(dir1.dir2)
+dir2 init
+<module 'dir1.dir2' from '/mnt/c/dir0/dir1/dir2/__init__.py'>
+>>> imp.reload(dir1.dir2.mod)
+in mod.py
+<module 'dir1.dir2.mod' from '/mnt/c/dir0/dir1/dir2/mod.py'>
+```
+
+> Since Python 3.4, the `imp` module is deprecated in favour of `importlib`; see the module's documentation for alternative uses.
+
+注意：从Python 3.4开始，`imp`模块已经被标记为 **is pending deprecation**。在Python 3.7.2中已被标记为 **deprecated**，建议使用`importlib`模块的`reload`函数。
+```python
+root@LEGEND-PC:/mnt/c# python
+Python 3.7.2 (default, Mar 25 2019, 20:38:07)
+[GCC 5.4.0 20160609] on linux
+Type "help", "copyright", "credits" or "license" for more information.
+>>> import sys
+>>> sys.path.append('/mnt/c/dir0')
+>>> import dir1.dir2.mod
+dir1 init
+dir2 init
+in mod.py
+>>> import importlib
+>>> importlib.reload(dir1)
+dir1 init
+<module 'dir1' from '/mnt/c/dir0/dir1/__init__.py'>
+>>> importlib.reload(dir1.dir2)
+dir2 init
+<module 'dir1.dir2' from '/mnt/c/dir0/dir1/dir2/__init__.py'>
+>>> importlib.reload(dir1.dir2.mod)
+in mod.py
+<module 'dir1.dir2.mod' from '/mnt/c/dir0/dir1/dir2/mod.py'>
+>>>
+```
+
+导入后，`import`语句内的路径会变成脚本的嵌套对象路径。如，`mod`是对象，嵌套在对象`dir2`中，而`dir2`又嵌套在对象`dir1`中：
+```python
+>>> dir1
+<module 'dir1' from '/mnt/c/dir0/dir1/__init__.py'>
+>>> dir1.dir2
+<module 'dir1.dir2' from '/mnt/c/dir0/dir1/dir2/__init__.py'>
+>>> dir1.dir2.mod
+<module 'dir1.dir2.mod' from '/mnt/c/dir0/dir1/dir2/mod.py'>
+```
+
+实际上，路径中的每个目录名称都变成赋值了模块对象的变量，而模块对象的命名空间则是由该目录内的`__init__.py`文件中所有赋值语句进行初始化的。
+```python
+>>> dir1.x    # dir1.x引用了变量x，x是在dir1/__init__.py中赋值的
+1
+>>> dir1.dir2.y   # dir1.dir2.y引用了变量y，y是在dir1/dir2/__init__.py中赋值的
+2
+>>> dir1.dir2.mod.z  # mod.z引用的变量z则是在mod.py内赋值的
+3
+```
+
+#### 包对应的from语句和import语句
+```python
+>>> from dir1.dir2 import mod # Code path here only
+dir1 init
+dir2 init
+in mod.py
+>>> mod.z # Don't repeat path
+3
+>>> from dir1.dir2.mod import z
+>>> z
+3
+>>> import dir1.dir2.mod as mod # Use shorter name (see Chapter 25)
+>>> mod.z
+3
+>>> from dir1.dir2.mod import z as modz # Ditto if names clash (see Chapter 25)
+>>> modz
+3
+```
+
 
 ### 24.3 为什么使用包导入
 
+在较大的程序中，包程序让导入更具信息性，并可以作为组织工具，简化模块的搜索路径，而且可以解决模糊性。
+
+当有多个同名模块时，将模块保存到不同目录中，并将其创建为包，可以在导入时保证同名模块的唯一性。
+
 ### 24.4 包的相对导入
 
+#### Python 3.0中的变化
+
+略
+
+#### 相对导入基础知识
+
+在 Python 3.X 和 Python 2.6 中，`from`语句可以使用前面的点号`.`来指定，它们需要位于同一包中的模块（所谓的***包相对导入***），而不是位于模块导入搜索路径上某处的模块（即所谓 ***绝对导入***）。也就是说：
+
+- 在 Python 3.X 和 Python 2.6中，我们可以使用`from`语句前面的点号来表示，导入应该性对于外围的包。这样的导入将只是在包的内部搜索，并且不会搜索位于导入搜索路径`sys.path`中某处的同名模块。
+- 在Python 3.X中，不带点号的导入默认是绝对的。在缺少任何特殊的点号语法的时候，Python忽略包目录自身（即导入搜索路径的相对部分），并在`sys.path`搜索路径上进行绝对查找。
+
+例如，在Python 3.X中，导入与当前文件位于同一包下的`spam`模块：
+
+```python
+from . import spam
+```
+
+导入与包含这条导入语句的文件位于同一包下的模块`spam`中的变量名`name`：
+
+```python
+from .spam import name
+```
+
+
+#### 为什么使用相对导入
+
+#### 相对导入的作用域
+
+- **相对导入只适用于包内导入**：这种功能的模块搜索路径修改只针对位于包内的模块文件中的`import`语句，即包内导入（intrapackage imports）。
+- **相对导入只适用于`from`语句**：这一功能的新语法只适用于`from`语句，而不适用于`import`语句。其特点为，一个以一个或多个点号开头的`from`语句中的模块名。模块名包含嵌入的点号，但没有以点号开头，这样的导入是包导入，而不是相对导入。
+
+#### 模块查找规则总结
+
+**关于包和相对导入，Python 3.X中的模块搜索可以总结为如下：**
+
+- 简单模块名（例如，`A`）通过搜索`sys.path`路径列表上的每个目录来查找，从左到右进行。这个列表由系统模块设置和用户配置组成。
+- 包就是目录，这些目录中存在一个特殊的`__init__.py`文件的Python模块。这使得可以在导入操作中使用像`A.B.C`这样的目录路径语法。例如，导入`A.B.C`，目录`A`位于相对于`sys.path`的普通模块导入搜索，目录`B`是`A`中的另一个包（子目录），`C`是`B`中的一个模块或者其他可导入项。
+- 在一个包的文件中，普通`import`和`from`语句就像其他地方的导入一样，使用相同的`sys.path`搜索规则。然而，在包中使用`from`语句和开头的点号的导入操作是相对于包的。也就是说，只有包目录会被检查，并且普通的`sys.path`查找不会被使用。例如，`from . import A`，模块搜索被限制在包含该`from`语句出现的文件的目录之中。
+
+
+#### 相对导入的应用
+##### 在包之外导入
+`/tmp/code/`目录下有一个和标准库模块`string.py`同名的模块文件，其内容如下：
+```python
+print('string' * 8)
+```
+
+如果`/tmp/code/`为当前工作目录，并想在此情况下导入模块`string`，则当前工作目录下的`string.py`模块就会被导入，因为模块搜索路径中的第一条是当前工作目录（CWD）：
+```python
+root@localhost:/tmp/code# python
+Python 3.7.2 (default, Mar 25 2019, 20:38:07)
+[GCC 5.4.0 20160609] on linux
+Type "help", "copyright", "credits" or "license" for more information.
+>>> import string
+stringstringstringstringstringstringstringstring
+>>> string
+<module 'string' from '/tmp/code/string.py'>
+>>>
+```
+
+
+
+**注意：如果不在作为包的一部分的模块文件中，是不允许使用相对导入语法的。**
+
+```python
+root@LEGEND-PC:/tmp/code# python
+Python 3.7.2 (default, Mar 25 2019, 20:38:07)
+[GCC 5.4.0 20160609] on linux
+Type "help", "copyright", "credits" or "license" for more information.
+>>> from . import string
+Traceback (most recent call last):
+  File "<stdin>", line 1, in <module>
+ImportError: cannot import name 'string' from '__main__' (unknown location)
+```
+
+由于目录`/tmp/code`不包含`__init__.py`文件，所以此目录不是包，也就不允许使用针对包的相对导入语法。
+
+
+##### 包内的导入
+
+
+#### Pitfalls of Package-Relative Imports: Mixed Use
+第五版，暂略
+
+
 ### 24.5 Python 3.3 Namespace Packages
+第五版，暂略
 
 ---
 
@@ -360,6 +662,75 @@ print(mod2.mod3.X) # Nested mod3's X
 
 
 ### 25.2 在模块中隐藏数据
+正如我们所看到的，Python模块会导出其文件顶层所赋值的所有变量名。在Python中，无法声明哪个变量名在模块外可见，哪个变量名在模块外不可见。实际上，如果客户端想的话，是没有办法阻止客户端修改一个模块中的变量名的。
+
+在Python中，模块内的数据隐藏是一种惯例，而不是一种语法约束。
+
+#### 最小化`from *`的破坏：`_X`和`__all__`
+有种特殊的情况，把下划线放在变量名前面（例如`_X`），可以防止客户端使用`from *`语句导入模块时，把其中的这些变量名复制出去。
+
+> 下划线不是“私有”声明。你还是可以使用其他导入形式看见并修改这类变量名，例如，使用`import`语句。
+
+例如，有如下模块文件`unders.py`：
+```python
+# unders.py
+a, _b, c, _d = 1, 2, 3, 4
+```
+
+可以看到，通过`from *`语句无法将变量名`_b`和`_d`导入：
+```python
+Python 3.7.2 (default, Mar 25 2019, 20:38:07)
+[GCC 5.4.0 20160609] on linux
+Type "help", "copyright", "credits" or "license" for more information.
+>>> from unders import *         # Load non _X names only
+>>> a, c
+(1, 3)
+>>> _b
+Traceback (most recent call last):
+  File "<stdin>", line 1, in <module>
+NameError: name '_b' is not defined
+>>> _d
+Traceback (most recent call last):
+  File "<stdin>", line 1, in <module>
+NameError: name '_d' is not defined
+>>>
+```
+
+但使用`import`语句可以导入所有变量名：
+```python
+>>> import unders         # But other importers get every name
+>>> unders._b
+2
+```
+
+
+此外，也可以在模块顶层把变量名的字符串列表赋值给变量`__all__`，以达到类似于`_X`下划线命名惯例的隐藏效果。例如，有如下模块文件`alls.py`：
+```python
+# alls.py
+__all__ = ['a', '_c'] # __all__ has precedence over _X
+a, b, _c, _d = 1, 2, 3, 4
+```
+
+使用`from *`语句，只有`__all__`列表中的变量名会被导入：
+```python
+>>> from alls import * # Load __all__ names only
+>>> a, _c
+(1, 3)
+>>> b
+NameError: name 'b' is not defined
+```
+
+但使用`import`语句可以导入所有变量名：
+```python
+>>> from alls import a, b, _c, _d # But other importers get every name
+>>> a, b, _c, _d
+(1, 2, 3, 4)
+>>> import alls
+>>> alls.a, alls.b, alls._c, alls._d
+(1, 2, 3, 4)
+```
+
+就像`_X`惯例一样，`__all__`列表只对`from *`语句这种形式有效，它并不是私有声明。
 
 
 ### 25.3 启用未来的语言特性：`__future__`
