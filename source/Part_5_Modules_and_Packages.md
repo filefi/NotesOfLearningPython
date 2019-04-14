@@ -742,17 +742,67 @@ from __future__ import FeatureName
 
 要列出你可以导入并启用的这些特性，你可以导入`__future__`模块，然后使用`dir`函数来查看。
 
-
 ### 25.4 混合使用方式：`__name__`和`__main__`
+
+每个模块都有个名为`__name__`的内置属性，Python会自动设置该属性：
+
+- 如果文件是以顶层程序文件执行，在启动时，`__name__`会被设置为字符串`__main__`。
+- 如果文件被导入，`__name__`就会被设置为客户端已知的模块名。
+
+由此，模块可以检测自己的`__name__`，来确定它是在执行还是被导入。
+
+实际上，在文件末端的`__name__`测试中的自我测试程序代码，可能是Python中最常见并且是最简单的单元测试协议。
 
 
 ### 25.5 实例：Dual Mode Code
+第五版，暂略
+
 
 
 ### 25.6 修改模块搜索路径
+`sys.path`在程序启动时就会进行初始化，但在那之后你就可以对其进行怎删改。
+
+```python
+>>> import sys
+>>> sys.path
+['', 'c:\\temp', 'C:\\Windows\\system32\\python33.zip', ...more deleted...]
+>>> sys.path.append('C:\\sourcedir') # Extend module search path
+>>> import string # All imports search the new dir last
+```
+
+注意，`sys.path`的设置方法只在修改的Python会话或程序（即进程）中生效。
 
 
 ### 25.7 import语句和from语句的as扩展
+`import`和`from`语句都可以扩展，让模块可以在脚本中给予不同的变量名。下面使用的`import`语句：
+
+```python
+import modulename as name # And use name, not modulename
+```
+相当于：
+```python
+import modulename
+name = modulename
+del modulename # Don't keep original name
+```
+
+`from`语句也可以这么用：
+```python
+from modulename import attrname as name # And use name, not attrname
+```
+
+
+当使用第24章中介绍的包导入功能时，它也可以十分方便地用来为整个目录路径提供简短的变量名来避免变量名冲突：
+
+```python
+import dir1.dir2.mod as mod # Only list full path once
+mod.func()
+```
+
+```python
+from dir1.dir2.mod import func as modfunc # Rename to make unique if needed
+modfunc()
+```
 
 
 ### 25.8 实例：模块即对象
