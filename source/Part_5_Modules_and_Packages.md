@@ -806,9 +806,67 @@ modfunc()
 
 
 ### 25.8 实例：模块即对象
+因为模块暴露了它们作为内置属性的大部分有趣特性，所以很容易地编写管理其他程序的程序。这类管理程序叫作 ***元程序***（metaprogram），也叫作 ***内省***（introspection）。
+
+在Python中，有多种方法可以取得模块属性。
+1. 通过`.`点号运算符和属性名来取得`M`模块的`name`属性：
+```python
+M.name # Qualify object by attribute
+```
+
+2. 通过对模块的属性字典`__dict__`进行索引取得`M`模块的`name`属性：
+```python
+M.__dict__['name'] # Index namespace dictionary manually
+```
+
+3. 字典`sys.modules`中保存了已加载的模块。通过它可以取得特定模块的特定属性。如下，取得`M`模块的`name`属性：
+```python
+sys.modules['M'].name # Index loaded-modules table manually
+```
+
+4. 内置函数`getattr`可以让我们以属性名的字符串来取得属性。如下，取得`M`模块的`name`属性：
+```python
+getattr(M, 'name') # Call built-in fetch function
+```
+
+通过这些方法，我们可以编写处理模块对象的程序，来管理其他模块。
 
 
 ### 25.9 用名称字符串导入模块
+我们可以在运行时以一个字符串的形式获取要导入的模块的名称（例如，如果一个用户从一个GUI中选择一个模块名称）。
+
+#### 运行代码字符串
+最通用的方法是，把一条导入语句构建为Python代码的一个字符串，并且将其传递给内置函数`exec`以运行。
+```python
+>>> modname = 'string'
+>>> exec('import ' + modname) # Run a string of code
+>>> string # Imported in this namespace
+<module 'string' from 'C:\\Python33\\lib\\string.py'>
+```
+
+`exec`函数（及其近亲`eval`）编译一个代码字符串，并且将其传递给Python解释器以执行。
+
+
+#### 直接调用：两个选项
+`exec`唯一的缺点是，每次运行时它必须编译`import`语句，编译速度可能会很慢。
+
+使用内置函数`__import__`来从一个名称字符串载入会快很多。
+```python
+>>> modname = 'string'
+>>> string = __import__(modname)
+>>> string
+<module 'string' from 'C:\\Python33\\lib\\string.py'>
+```
+
+在Python的新版本中，`importlib.import_module`也可以做同样的事。
+```python
+>>> import importlib
+>>> modname = 'string'
+>>> string = importlib.import_module(modname)
+>>> string
+<module 'string' from 'C:\\Python33\\lib\\string.py'>
+```
+
 
 
 ### 25.10 实例：过渡性模块重载
