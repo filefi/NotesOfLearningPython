@@ -495,7 +495,7 @@ in mod.py
 
 注意：从Python 3.4开始，`imp`模块已经被标记为 **is pending deprecation**。在Python 3.7.2中已被标记为 **deprecated**，建议使用`importlib`模块的`reload`函数。
 ```python
-root@LEGEND-PC:/mnt/c# python
+rootlocalhost:/mnt/c# python
 Python 3.7.2 (default, Mar 25 2019, 20:38:07)
 [GCC 5.4.0 20160609] on linux
 Type "help", "copyright", "credits" or "license" for more information.
@@ -631,7 +631,7 @@ stringstringstringstringstringstringstringstring
 **注意：如果不在作为包的一部分的模块文件中，是不允许使用相对导入语法的。**
 
 ```python
-root@LEGEND-PC:/tmp/code# python
+rootlocalhost:/tmp/code# python
 Python 3.7.2 (default, Mar 25 2019, 20:38:07)
 [GCC 5.4.0 20160609] on linux
 Type "help", "copyright", "credits" or "license" for more information.
@@ -659,6 +659,17 @@ ImportError: cannot import name 'string' from '__main__' (unknown location)
 
 ## 第25章 高级模块话题
 ### 25.1 模块设计概念
+
+就像函数一样，模块的设计也需要权衡：需要思考那些函数要放进模块、模块的通信机制等。
+
+- **总是在Python的模块内编写代码。**
+- **模块耦合要降到最低（Minimize module coupling）：全局变量。**
+- **最大化模块的黏合性（Maximize module cohesion）：同一目标。**
+- **模块应该尽可能少地修改其他模块的变量。**修改另一个模块内的全局变量，通常是有问题的设计。应该试着通过函数参数和返回值这类机制去传递结果，而不是进行跨模块的修改。
+
+下图描绘了模块操作的环境。模块包含全局变量、函数、类以及其他的模块（如果导入了）。函数有自己的本地变量。
+
+![Figure 25-1](_static/images/Part_5_Modules_and_Packages.assets/1555340659141.png)
 
 
 ### 25.2 在模块中隐藏数据
@@ -869,7 +880,128 @@ getattr(M, 'name') # Call built-in fetch function
 
 
 
-### 25.10 实例：过渡性模块重载
+### 25.10 实例：过渡性模块重载（Transitive Module Reloads）
+
+如果一个模块`A`导入了模块`B`和`C`，当我们重载模块`A`时，仅会重载模块`A`，而在模块`A`中导入的模块`B`和`C`是不会自动重新载入的；而只会获取已经载入的模块`B`和`C`的模块对象（假设它们之前已经被导入）。
+
+模块`A.py`的内容：
+```python
+# A.py
+print('now in module A')
+import B # Not reloaded when A is!
+import C # Just an import of an already loaded module: no-ops
+```
+
+模块`B.py`的内容：
+```pyhton
+# B.py
+print('module B has been imported')
+```
+
+模块`C.py`的内容：
+```python
+# C.py
+print('module C has been imported')
+```
+
+```python
+root@localhost:/tmp# python
+Python 3.7.2 (default, Mar 25 2019, 20:38:07)
+[GCC 5.4.0 20160609] on linux
+Type "help", "copyright", "credits" or "license" for more information.
+>>> import A
+now in module A
+module B has been imported
+module C has been imported
+>>> import importlib
+>>> importlib.reload(A)
+now in module A               # 在模块A中被导入的模块B和C没有被重载
+<module 'A' from '/tmp/A.py'>
+>>>
+```
+
+#### 递归重载器（Recursive Reloader）
+要解决这个问题，一种好的办法是编写一个通用工具来自动进行过渡性重载（transitive reload），通过扫描模块的`__dict__`属性并检查每一项的`type`来找到需要重新载入的嵌套模块。
+
+模块`reloadall.py`的内容：
+```python
+#!python
+"""
+reloadall.py: transitively reload nested modules (2.X + 3.X).
+Call reload_all with one or more imported module module objects.
+"""
+
+import types
+from imp import reload # from required in 3.X
+
+def status(module):
+	print('reloading ' + module.__name__)
+
+def tryreload(module):
+	try:
+		reload(module) # 3.3 (only?) fails on some
+	except:
+		print('FAILED: %s' % module)
+
+def transitive_reload(module, visited):
+	if not module in visited: # Trap cycles, duplicates
+		status(module) # Reload this module
+		tryreload(module) # And visit children
+		visited[module] = True
+		for attrobj in module.__dict__.values(): # For all attrs
+			if type(attrobj) == types.ModuleType: # Recur if module
+				transitive_reload(attrobj, visited)
+
+def reload_all(*args):
+	visited = {} # Main entry point
+	for arg in args: # For all passed in
+		if type(arg) == types.ModuleType:
+			transitive_reload(arg, visited)
+			
+def tester(reloader, modname): # Self-test code
+	import importlib, sys # Import on tests only
+	if len(sys.argv) > 1: 
+		modname = sys.argv[1] # command line (or passed)
+	module = importlib.import_module(modname) # Import by name string
+	reloader(module) # Test passed-in reloader
+		
+if __name__ == '__main__':
+	tester(reload_all, 'reloadall') # Test: reload myself?
+```
+
+
+#### 替代编码方案
+第五版，暂略
 
 
 ### 25.11 模块陷阱
+
+#### Module Name Clashes: Package and Package-Relative Imports
+第五版，暂略
+
+#### 顶层代码的语句次序很重要
+当模块首次导入（或重载）时，Python会从头到尾执行语句。这里有些和前向引用（forward reference）相关的概念，值得在此强调：
+- 在导入时，一旦Python运行到模块文件顶层的程序代码（不在函数内），就会立即执行。因此，该语句无法引用文件后面位置赋值的变量名。
+- 位于函数主体内的代码直到函数被调用后才会运行。因为函数内的变量名在函数实际执行前都不会解析，通常可以引用文件任意地方的变量。
+
+一般来说，前向引用只对立即执行的顶层代码有影响，函数可以任意引用变量名。以下是示范前向引用的例子：
+
+```python
+func1() # Error: "func1" not yet assigned
+
+def func1():
+	print(func2()) # OK: "func2" looked up later
+
+func1() # Error: "func2" not yet assigned
+
+def func2():
+	return "Hello"
+
+func1() # OK: "func1" and "func2" assigned
+```
+当这个文件导入时（或者作为独立程序运行时），Python会从头到尾运行它的语句。
+
+
+#### `from`赋值变量名，而不是连接
+`from`语句其实是在导入者的作用域内对变量名的赋值语句，也就是变量名拷贝运算，而不是变量名的别名机制。它的实现和Python中所有赋值运算相同，但其微妙之处在于，共享对象的代码存在于不同文件中。
+
