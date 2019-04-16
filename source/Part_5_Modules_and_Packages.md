@@ -1005,3 +1005,68 @@ func1() # OK: "func1" and "func2" assigned
 #### `from`赋值变量名，而不是连接
 `from`语句其实是在导入者的作用域内对变量名的赋值语句，也就是变量名拷贝运算，而不是变量名的别名机制。它的实现和Python中所有赋值运算相同，但其微妙之处在于，共享对象的代码存在于不同文件中。
 
+例如，假设我们定义了模块`nested1.py`。
+
+```python
+# nested1.py
+X = 99
+def printer(): print(X)
+```
+
+如果我们在另一个模块`nested2.py`内使用`from`导入两个变量名，就会得到两个变量名的拷贝，而不是对两个变量名的连接。导入者内修改变量名，只会重设该变量名在本地作用域版本的绑定值，而不是`nested1.py`中的变量名。
+
+```python
+# nested2.py
+from nested1 import X, printer # Copy names out
+X = 88 # Changes my "X" only!
+printer() # nested1's X is still 99
+```
+
+运行模块`nested2.py`：
+
+```python
+% python nested2.py
+99
+```
+
+然而，如果我们使用`import`获得了整个模块，然后赋值某个点号运算的变量名，就会修改`nested1.py`中的变量名。点号运算符把Python定向到了模块对象内的变量名，而不是导入者`nested3.py`的变量名。
+
+```python
+# nested3.py
+import nested1 # Get module as a whole
+nested1.X = 88 # OK: change nested1's X
+nested1.printer()
+```
+
+运行模块`nested3.py`：
+```python
+% python nested3.py
+88
+```
+
+#### `from *`语句会让变量语义模糊
+使用`from module import *`形式语句时，因为你不会列出想要的变量，可能会意外覆盖了作用域内已使用的变量名。更糟的是，这将很难确认变量来自何处。如果有一个以上的被导入文件使用了`from *`形式，就更是如此了。
+
+#### `reload`不会影响`from`导入
+
+重载被导入的模块，对于使用`from`导入的模块的变量名没有影响。也就是说，客户端的变量名依然引用了通过`from`获得的原始对象，即使之后原始模块中的变量名进行了重新设置：
+```python
+from module import X # X may not reflect any module reloads!
+. . .
+from imp import reload
+reload(module) # Changes module, but not my names
+```
+
+为了保证重载更有效，可以使用`import`以及点号运算，来取代`from`。因为点号运算总是会回到模块，这样就会找到模块重载后变量名的新的绑定值。
+```python
+import module # Get module, not names
+. . .
+from imp import reload
+reload(module) # Changes module in place
+module.X # Get current X: reflects module reloads
+```
+
+#### `reload`、`from`以及交互模式测试
+不要将`reload`和`from`结合起来使用！
+
+#### 递归形式的`from`导入无法工作
