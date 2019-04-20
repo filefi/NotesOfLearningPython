@@ -1,3 +1,6 @@
+[TOC]
+
+
 # 第6部分 类和OOP
 
 ## 第26章 OOP：The Big Picture
@@ -62,38 +65,129 @@ object.attribute
 再次考虑之前类树的例子。当我们调用方法（也就是附属于类的函数属性）时会发生什么？
 
 - **如果这个`I2.w`引用是一个函数调用，其实际含义是“调用`C3.w`函数以处理`I2`”。也就是说，Python将会自动将`I2.w()`调用映射为`C3.w(I2)`调用，传入该实例作为继承的函数的第一个参数。**
-- **也就是说，Python把隐含的实例传进方法中的第一个参数，习惯性将其称为`self`。**
+- **也就是说，Python把隐含的实例传进方法的第一个参数，习惯性将其称为`self`。**
 
 
 
 #### 编写类树
 
+- 每个`class`语句会生成一个新的类对象。
+- 每次类调用时，就会生成一个新的实例对象。
+- 实例自动连接至创建了这些实例的类。
+- 类连接至其超类的方式是，将超类列在类头部的括号内。其从左至右的顺序会决定树中的次序。
 
+例如，要创建前例中的树，我们可以运行以下代码（这里省略了`class`语句中的内容）：
+
+```python
+class C2:                   # Make class objects (ovals)
+    pass 
+    
+class C3: 
+    pass
+    
+class C1(C2, C3):           # Make and link class C1 to superclasses C2, C3 (in this order)
+    def setname(self, who): # Assign name: C1.setname
+        self.name = who     # Self is either I1 or I2
+        
+I1 = C1()                   # Make instance objects (rectangles)
+I2 = C1()                   # Linked to their classes
+I1.setname('bob')           # Sets I1.name to 'bob'
+I2.setname('sue')           # Sets I2.name to 'sue'
+print(I1.name)              # Prints 'bob'
+```
+
+从技术角度来讲，这个例子使用了所谓的 ***多重继承*** 。也就是说，在类树中，类有一个以上的超类。在Python中，如果`class`语句中的小括号内有一个以上的超类（像这里的`C1`）,它们由左至右的次序会决定超类搜索的顺序。
+
+附加在实例上的属性只属于那些实例，但附加在类上的属性则由所有子类及其实例共享。
+
+- Attributes are usually attached to classes by assignments made at the top level in
+    class statement blocks, and not nested inside function def statements there.
+- Attributes are usually attached to instances by assignments to the special argument
+    passed to functions coded inside classes, called self. 通过传参并赋值给类中的函数的特殊参数（也就是`self`），属性通常被附加给实例。
+
+类通过函数（在`class`语句内由`def`语句编写而成）为实例提供行为。当`def`出现在类的内部时，通常称为 ***方法*** 。方法会自动接收第一个特殊参数（通常称为`self`），这个参数提供了被处理的实例的参照值。
+
+> 注：如果你是用过C++或Java，就知道Python的`self`相当于`this`，但是Python中的`self`必须是明确写出的，这样使属性的读取更为明显。
+
+因为类是多个实例的工厂，每当需要取出或设置正有某个方法调用所处理的特定实例的属性时，类的方法通常都会经历这种自动传入的`self`参数。
 
 #### 运算符重载
-
+略
 
 
 #### OOP是为了代码重用
-##### Polymorphism and classes
+##### 多态(polymorphism) 和 类
+
+***多态*** 是指运算的意义取决于运算对象。多态可用于隐藏（封装）接口差异性。
+
+##### 自定义编程
+
+一旦习惯了使用OOP方式进行程序设计，你就会发现，当要写新程序时，大部分任务就是把已实现的超类混合起来。
 
 
-##### Programming by customization
+
+
 
 ---
+
 
 
 ## 第27章 类代码编写基础
 ### 27.1 类产生多个实例对象
 
+***类对象*** 提供默认行为，是 **产生多个实例对象** 的工厂。
+
+***实例对象*** 是程序处理的实际对象：各自有独立的命名空间，但是继承创建该实例的类中的变量名。
+
+*类对象* 来自于语句，而 *实例对象* 来自于类的调用。每次调用一个类，就会得到这个类的新的实例。
+
+
+#### 类对象提供默认行为
+执行`class`语句，就会得到类对象。以下是Python类主要特性的要点：
+- **`class`语句创建类对象并将其赋值给变量名。** 就像`def`语句一样，`class`语句是可执行的，一般是在其所在的文件第一次被导入时执行。
+- **`class`语句内的赋值语句会创建类的属性。** 就像模块文件一样，`class`语句内顶层的赋值语句（但不在`def`语句中）会产生类对象的属性。`class`语句的作用域会变成类对象的属性的命名空间，就像模块的全局作用域一样。
+- **类属性提供对象的状态和行为。** 类对象的属性记录状态信息和行为，可由这个类所创建的所有实例共享。位于类中的函数`def`语句会生成 **方法** ，方法将会处理实例。
+
+
+
+#### 实例对象是具体的元素
+
+当调用类对象时，我们得到了实例对象。以下是关于类的实例的关键点：
+
+- **像函数那样调用类对象会创建新的实例对象。**
+- **每个实例对象继承类的属性并获得了自己的命名空间。**
+- **在方法内`self`属性做赋值运算会产生每个实例自己的属性。** 在类方法内，第一个参数（按惯例称为`self`）会引用正处理的实例对象。对`self`的属性做赋值运算，会创建或修改实例内的数据，而不是类的数据。
+
+#### 第一个例子
+
+首先，定义一个名为`FirstClass`的类：
+
+```python
+>>> class FirstClass:              # Define a class object
+        def setdata(self, value):  # Define class's methods
+            self.data = value      # self is the instance
+        def display(self):
+            print(self.data)       # self.data: per instance
+```
+
+在类的代码块中顶层的任何变量名赋值（包括`def`语句），都会变成类的属性。所以上例中的函数对象`setdata`和`display`都成为了类`FirstClass`的属性。当函数是类的属性时，通常称为 ***方法*** 。
+
+在方法调用时，第一个参数自动接收隐含的实例对象，即调用的主体。
+
+
+
 
 ### 27.2 类通过继承进行定制
+
 
 
 ### 27.3 类可以截获Python运算符
 
 
+
 ### 27.4 世界上最简单的Python类
+
+
 
 
 ## 第28章 更多实例
