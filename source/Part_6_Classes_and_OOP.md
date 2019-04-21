@@ -1,6 +1,3 @@
-[TOC]
-
-
 # 第6部分 类和OOP
 
 ## 第26章 OOP：The Big Picture
@@ -174,18 +171,275 @@ print(I1.name)              # Prints 'bob'
 
 在方法调用时，第一个参数自动接收隐含的实例对象，即调用的主体。
 
+调用类时会创建实例对象，实例对象会连接至创建它们的类，其实质就是实例对象可读取类属性的命名空间。以下代码，建立实例`x`和`y`：
+
+```python
+>>> x = FirstClass() # Make two instances
+>>> y = FirstClass() # Each is a new namespace
+```
+
+如下图所示，建立实例`x`和`y`后，实际有3个对象，即2个实例对象和1个类对象；同时也有了三个连接的命名空间：
+
+![Figure 27-1](_static/images/Part_6_Classes_and_OOP.assets/1555818374206.png)
+
+类和实例是类树中通过继承搜索的相连的命名空间。这里的`data`属性会在实例内找到，但是`setdata`和`display`则是在它们之上的类中找到的。
+
+**继承** 是在属性点号运算时发生的。对实例对象和类对象内的属性名称进行点号运算，Python会通过继承搜索从类取得变量名（除非该变量名位于实例对象内）。例如，实例对象`x`和`y`本身没有`setdata`属性，为了寻找这个属性，Python会进行继承搜索，取得类对象`FirstClass`的属性`setdata`：
+
+```python
+>>> x.setdata("King Arthur")   # Call methods: self is x
+>>> y.setdata(3.14159)         # Runs: FirstClass.setdata(y, 3.14159)
+```
+
+在`FirstClass`的`setdata`函数中，传入的值会赋值给`self.data`。在方法中的第一个参数（按惯例称`self`）会自动引用正在处理的实例（如`x`和`y`），所以赋值语句会把值存储在实例的命名空间，而不是类的命名空间（这是图27-1中变量名`data`的创建的方式）。
+
+因为类会产生多个实例，方法必须经过`self`参数才能获取正在处理的实例。所以，当调用类的`display`方法来打印`self.data`时，实例`x`和`y`的值都不同：
+
+```python
+>>> x.display()      # self.data differs in each instance
+King Arthur
+>>> y.display()      # Runs: FirstClass.display(y)
+3.14159
+```
+
+我们可以在类的内部或外部修改实例属性。在类内时，通过方法内对`self`进行赋值运算；而在类外时，则可以通过对实例对象进行赋值运算：
+
+```python
+>>> x.data = "New value"   # Can get/set attributes
+>>> x.display()            # Outside the class too
+New value
+```
+
+通过在类方法函数外对变量名进行赋值运算，我们甚至可以在实例命名空间内创建全新的属性：
+
+```python
+>>> x.anothername = "spam"      # Can set new attributes here too!
+```
+
 
 
 
 ### 27.2 类通过继承进行定制
 
+在Python中，实例从类中继承，而类继承与超类。以下是属性继承机制的关键点：
+
+- **超类列在了类开头的括号中。** 要继承另一个类的属性，把该类列在`class`语句开头的括号中就可以了。含有继承的类称为子类，而子类所继承的类就是其超类。
+- **类从其超类中继承属性。** 就像实例继承其类中所定义的属性名一样，类也会继承其超类中定义的所有属性名称。当读取的属性不存在子类中时，Python会自动在搜索类树中搜索这个属性。
+- **实例会继承所有可读取类的属性。** 每个实例会从创建它的类中获取变量名，此外，还有该类的超类。搜索变量名时，Python会检查实例，然后是它的类，最后是所有超类。
+- **每个`object.attribute`都会开启新的独立搜索。** Python会对每个属性读取表达式进行对类树的独立搜索。这包括在`class`语句外对实例和类的引用，以及在类方法函数内对`self`实例参数属性的引用。方法中的每个`self.attr`表达式都会开启对`self`及其上层的类的`attr`属性的搜索。
+- **逻辑的修改是通过创建子类，而不是修改超类。** 在树中层次较低的子类中重新定义超类的变量名，子类就可取代并定制所继承的行为。
+
+
+#### 第二个例子
+
+下例建立在上一个例子的基础之上，定义一个继承类`FirstClass`所有变量名的新类`SecondClass`，并提供一个其自己的变量名`display`，我们把这种在树中较低处发生的重新定义的、取代属性的动作称为 ***重载*** 。
+
+```python
+>>> class SecondClass(FirstClass):   # Inherits setdata
+...     def display(self):           # Changes display
+...         print('Current value = "%s"' % self.data)
+...
+```
+
+结果就是`SecondClass`改变了方法`display`的行为，但依然会继承`FirstClass`的`setdata`方法：
+
+```python
+>>> z = SecondClass()
+>>> z.setdata(42)          # Finds setdata in FirstClass
+>>> z.display()            # Finds overridden method in SecondClass
+Current value = "42"
+```
+
+下图描绘了上面操作涉及的命名空间：
+
+![Figure 27-2](_static/images/Part_6_Classes_and_OOP.assets/1555841428600.png)
+
+#### 类是模块内的属性
+当`class`语句执行时，这只是赋值给对象的变量，而对象可以用到任何普通表达式引用。
+
+类是模块内的属性，如果`FirstClass`是写在模块内的，就可以将其导入：
+```python
+from modulename import FirstClass # Copy name into my scope
+class SecondClass(FirstClass): # Use class name directly
+    def display(self): ...
+```
+等价于：
+```python
+import modulename # Access the whole module
+class SecondClass(modulename.FirstClass): # Qualify to reference
+    def display(self): ...
+```
 
 
 ### 27.3 类可以截获Python运算符
+简而言之，运算符重载就是用类编码的对象截获（intercept）和响应对内置类型起作用的运算：加法、分片、打印和点号运算等。
 
+以下是运算符重载的主要概念：
+- **以双下划线命名的方法（如`__X__`）是特殊钩子。** Python运算符重载的实现是提供特殊命名的方法来拦截运算。Python语言替每种运算和特殊命名的方法之间，定义了固定不变的映射关系。
+- **当实例出现在内置运算时，这类方法会自动调用。** 例如，如果实例对象继承了`__add__`方法，当对象出现在`+`表达式内时，该方法就会调用。该方法的返回值会变成相应表达式的结果。
+- **类可覆盖多数内置类型运算。** 有几十种特殊运算符重载的方法名称，几乎可截获并实现内置类型的所有运算。它不仅包含了表达式，而且像打印和对象建立这类基本运算也包括在内。
+- **运算符覆盖方法没有默认值，而且也不需要。** 如果类没有定义或继承运算符重载方法，就是说相应的运算在类实例中并不支持。例如，如果没有`__add__`，表达式`+`就会引发异常。
+- **New-style classes have some defaults, but not for common operations. 新式类有一些默认值，但不是针对通用运算符。** In Python 3.X, and so-called “new style” classes in 2.X that we’ll define later, a root class named object does provide defaults for some __X__ methods, but not for many, and not for most commonly used operations.在Python 3.X中，以及在Python 2.X中也叫做新式类，一个叫做`object`的根类确实为一些`__X__`方法提供了默认值，但不并不多，尤其是不针对大多数通用的运算。
+- **运算符允许类与Python的对象模型相集成。** 重载类型运算时，以类实现的用户定义对象的行为就会像内置对象一样，因此，提供了一致性，以及与预期接口的兼容性。
+
+
+
+#### 第三个例子
+
+在这个例子中，我们要定义`SecondClass`的子类，实现三个特殊名称的属性，让Python自动进行调用：
+
+- 当新的实例被创建时，构造函数`__init__`会被调用。其中，`__init__`方法的参数`self`是`ThirdClass`类的新对象。
+- 当一个`ThirdClass`的实例出现在表达式`+`中时，`__add__`会被调用。
+- 当一个对象被打印（技术上来说，当它被内置函数`str`转换为它的打印字符串或它的Python内部等价），`__str__`会被调用。
+
+```python
+class ThirdClass(SecondClass): # Inherit from SecondClass
+    def __init__(self, value): # On "ThirdClass(value)"
+        self.data = value
+    def __add__(self, other): # On "self + other"
+        return ThirdClass(self.data + other)
+    def __str__(self): # On "print(self)", "str()"
+        return '[ThirdClass: %s]' % self.data
+    def mul(self, other): # In-place change: named
+        self.data *= other
+```
+
+```python
+>>> a = ThirdClass('abc') # __init__ called
+>>> a.display() # Inherited method called
+Current value = "abc"
+>>> print(a) # __str__: returns display string
+[ThirdClass: abc]
+>>> b = a + 'xyz' # __add__: makes a new instance
+>>> b.display() # b has all ThirdClass methods
+Current value = "abcxyz"
+>>> print(b) # __str__: returns display string
+[ThirdClass: abcxyz]
+>>> a.mul(3) # mul: changes instance in place
+>>> print(a)
+[ThirdClass: abcabcabc]
+```
+
+#### 为什么要使用运算符重载
+
+选择使用或不使用运算符重载，取决于你有多想让对象的用法和外观看起来更像内置类型。
+
+几乎每个实际的类都会出现的一个重载方法是：`__init__`构造函数。它让类立即在其新建的实例内添加属性。
 
 
 ### 27.4 世界上最简单的Python类
+
+实际上，我们建立的类中可以完全没有属性，而仅仅是空的命名空间对象：
+
+```python
+>>> class rec: pass     # Empty namespace object
+```
+
+建立这个类后，可以完全在最初的`class`语句外，通过赋值变量名给这个类增加属性：
+
+```python
+>>> rec.name = 'Bob'    # Just objects with attributes
+>>> rec.age = 40
+```
+
+通过赋值语句创建这些属性后，就可以用一般的语法将它们取出。这样使用类时，类差不多就像是C语言中的`struct`：
+
+```python
+>>> print(rec.name)    # Like a C struct
+Bob
+```
+
+创建`rec`类的实例`x`和`y`：
+
+```python
+>>> x = rec()    # Instances inherit class names
+>>> y = rec()
+```
+
+虽然`x`和`y`本身没有它们自己的属性，是完全空的命名空间对象，但因为继承了`rec`，所以`x`和`y`会获取到`rec`类的属性：
+```python
+>>> x.name, y.name   # name is stored on the class only
+('Bob', 'Bob')
+```
+
+如果把一个属性赋值给一个实例，就会在该对象内创建或修改该属性，而不会因属性的引用而启动继承搜索，因为属性赋值运算只会影响属性赋值所在的对象：
+
+```python
+>>> x.name = 'Sue'            # But assignment changes x only
+>>> rec.name, x.name, y.name  # y依然继承类rec的属性name
+('Bob', 'Sue', 'Bob')
+```
+
+
+
+事实上，命名空间对象的属性通常都是以字典的形式实现的，而类继承树只是连接至其他字典的字典而已。例如，`__dict__`属性是针对大多数基于类的对象的命名空间字典。一些类也可能在`__slots__`中定义了属性。
+
+```python
+>>> rec.__dict__
+mappingproxy({'__module__': '__main__', '__dict__': <attribute '__dict__' of 'rec' objects>, '__weakref__': <attribute '__weakref__' of 'rec' objects>, '__doc__': None})
+>>> rec.__dict__.keys()
+dict_keys(['__module__', '__dict__', '__weakref__', '__doc__'])
+```
+```python
+>>> x.__dict__.keys()
+dict_keys(['name'])
+>>> x.__dict__
+{'name': 'Sue'}
+```
+```python
+>>> y.__dict__
+{}
+>>> y.__dict__.keys()
+dict_keys([])
+```
+
+每个实例都连接至其类以便于继承，可以通过`__class__`查看：
+
+```python
+>>> x.__class__
+<class '__main__.rec'>
+>>> y.__class__
+<class '__main__.rec'>
+```
+
+每个类也有一个`__base__`属性，它是其超类的元组：
+
+```python
+>>> rec.__base__
+<class 'object'>
+```
+
+
+
+即使是方法（通常在类中通过`def`创建），也可以完全独立地在任意类对象的外部创建，然后赋值给类作为其属性：
+
+```python
+>>> def uppername(obj):
+...     return obj.name.upper() # Still needs a self argument (obj)
+...
+>>> rec.method = uppername # Now it's a class's method!
+>>> x.method() # Run method to process x
+'SUE'
+>>> y.method() # Same, but pass y to self
+'BOB'
+>>> rec.method(x) # Can call through instance or class
+'SUE'
+```
+
+当然这个函数也可以直接调用，只要我们手动传入一个带有`name`属性的对象：
+
+```python
+>>> uppername(x) # Call as a simple function
+'SUE'
+```
+
+#### 类与字典的关系
+
+
+
+
+
+---
 
 
 
