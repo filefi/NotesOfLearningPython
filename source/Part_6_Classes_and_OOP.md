@@ -433,9 +433,71 @@ dict_keys([])
 'SUE'
 ```
 
-#### 类与字典的关系
 
 
+#### 类VS字典
+
+使用元组来记录实体的属性：
+
+```python
+>>> rec = ('Bob', 40.5, ['dev', 'mgr']) # Tuple-based record
+>>> print(rec[0])
+Bob
+```
+
+使用字典来记录实体的属性：
+```python
+>>> rec = {}
+>>> rec['name'] = 'Bob' # Dictionary-based record
+>>> rec['age'] = 40.5 # Or {...}, dict(n=v), etc.
+>>> rec['jobs'] = ['dev', 'mgr']
+>>>
+>>> print(rec['name'])
+Bob
+```
+
+使用类来记录实体的属性：
+```python
+>>> class rec: pass
+>>> rec.name = 'Bob' # Class-based record
+>>> rec.age = 40.5
+>>> rec.jobs = ['dev', 'mgr']
+```
+
+使用类的实例对象来记录实体的属性：
+```python
+>>> class rec: pass
+>>> pers1 = rec() # Instance-based records
+>>> pers1.name = 'Bob'
+>>> pers1.jobs = ['dev', 'mgr']
+>>> pers1.age = 40.5
+>>>
+>>> pers2 = rec()
+>>> pers2.name = 'Sue'
+>>> pers2.jobs = ['dev', 'cto']
+>>>
+>>> pers1.name, pers2.name
+('Bob', 'Sue')
+```
+
+编写一个完整的类，来记录实体的属性，并提供对属性操作的行为：
+```python
+>>> class Person:
+        def __init__(self, name, jobs, age=None): # class = data + logic
+            self.name = name
+            self.jobs = jobs
+            self.age = age
+        def info(self):
+            return (self.name, self.jobs)
+
+>>> rec1 = Person('Bob', ['dev', 'mgr'], 40.5) # Construction calls
+>>> rec2 = Person('Sue', ['dev', 'cto'])
+>>>
+>>> rec1.jobs, rec2.info() # Attributes + methods
+(['dev', 'mgr'], ('Sue', ['dev', 'cto']))
+```
+
+尽管像字典这样的类型使用起来十分灵活，但是类允许我们已内置类型和简单函数不能直接支持的方式为对象添加行为。尽管我们也可以把函数存储到字典中，但使用类来处理隐含的实例更加自然。
 
 
 
@@ -445,10 +507,40 @@ dict_keys([])
 
 
 ## 第28章 更多实例
+在本章中，我们将编写两个类：
+- `Person`：创建并处理关于人员的信息的一个类。
+- `Manager`：一个定制的`Person`，修改了继承的行为。
+
+在这个过程中，我们将创建2个类的实例，并测试它们的功能。最后，我们将把实例存储到一个`shelve`的面向对象数据库中，使它们持久化。通过这种方式，我们可以把这些代码用作模板，从而发展为完全用Python编写的一个完备的个人数据库。
 ### 28.1 步骤1：创建实例
 
+在Python中，模块名使用小写字母开头，而类名使用一个大写字母开头，这通常是惯例。
+
+按照惯例，我们将新的模块文件命名为`person.py`，将其中的类命名为`Person`，如下所示：
+
+```python
+# File person.py (start)
+class Person: # Start a class
+```
 
 ### 28.2 步骤2：添加行为方法
+
+通过 ***实例对象属性*** 记录人员的基本信息。
+
+实例对象属性通常通过给类方法函数中的`self`属性赋值来创建。
+
+每次创建一个实例时，Python自动运行构造函数`__init__`。构造函数`__init__`通过其第一个参数`self`给实例对象属性赋第一个值以创建该对象实例属性。
+
+```python
+# Add record field initialization
+class Person:
+    def __init__(self, name, job, pay): # Constructor takes three arguments
+        self.name = name # Fill out fields when created
+        self.job = job # self is the new instance object
+        self.pay = pay
+```
+
+
 
 
 ### 28.3 步骤3：运算符重载
