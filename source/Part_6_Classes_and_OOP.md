@@ -512,6 +512,8 @@ Bob
 - `Manager`：一个定制的`Person`，修改了继承的行为。
 
 在这个过程中，我们将创建2个类的实例，并测试它们的功能。最后，我们将把实例存储到一个`shelve`的面向对象数据库中，使它们持久化。通过这种方式，我们可以把这些代码用作模板，从而发展为完全用Python编写的一个完备的个人数据库。
+
+
 ### 28.1 步骤1：创建实例
 
 在Python中，模块名使用小写字母开头，而类名使用一个大写字母开头，这通常是惯例。
@@ -523,7 +525,7 @@ Bob
 class Person: # Start a class
 ```
 
-### 28.2 步骤2：添加行为方法
+#### 编写构造函数
 
 通过 ***实例对象属性*** 记录人员的基本信息。
 
@@ -540,13 +542,251 @@ class Person:
         self.pay = pay
 ```
 
+虽然构造函数`__init__`的名字很怪异，但它仍然是一个常规的函数，并且支持所有的函数特性。例如，我们可以为它的参数提供默认值：
+```python
+# Add defaults for constructor arguments
+class Person:
+    def __init__(self, name, job=None, pay=0): # Normal function args
+        self.name = name
+        self.job = job
+        self.pay = pay
+```
+
+#### 在进行中测试
+
+用Python编程其实就是一种 ***增量原型*** ，编写一些代码，测试它，编写更多代码，再次测试，以此类推。
+
+#### 以两种方式使用代码
+
+使用语句块`if __name__ == '__main__':`控制测试代码的运行：
+
+```python
+# Allow this file to be imported as well as run/tested
+class Person:
+    def __init__(self, name, job=None, pay=0):
+        self.name = name
+        self.job = job
+        self.pay = pay
+        
+if __name__ == '__main__': # When run for testing only
+    # self-test code
+    bob = Person('Bob Smith')
+    sue = Person('Sue Jones', job='dev', pay=100000)
+    print(bob.name, bob.pay)
+    print(sue.name, sue.pay)
+```
+
+因为`__name__`等于`__main__`，所以把文件作为顶层脚本运行时，就能够运行语句块`if __name__ == '__main__':`内的测试代码：
+```python
+C:\code> person.py
+Bob Smith 0
+Sue Jones 100000
+```
+
+而把它作为类库导入的时候，则不会运行测试代码：
+
+```python
+C:\code> python
+Python 3.3.0 (v3.3.0:bd8afb90ebf2, Sep 29 2012, 10:57:17) ...
+>>> import person
+>>>
+```
 
 
+
+### 28.2 步骤2：添加行为方法
+
+#### 编写方法
+
+把操作实例对象属性的代码移入类方法中，从而实现 ***封装*** 。
+
+```python
+# Add methods to encapsulate operations for maintainability
+class Person:
+    def __init__(self, name, job=None, pay=0):
+        self.name = name
+        self.job = job
+        self.pay = pay
+    def lastName(self): # Behavior methods
+        return self.name.split()[-1] # self is implied subject
+    def giveRaise(self, percent):
+        self.pay = int(self.pay * (1 + percent)) # Must change here only
+
+if __name__ == '__main__':
+    bob = Person('Bob Smith')
+    sue = Person('Sue Jones', job='dev', pay=100000)
+    print(bob.name, bob.pay)
+    print(sue.name, sue.pay)
+    print(bob.lastName(), sue.lastName()) # Use the new methods
+    sue.giveRaise(.10) # instead of hardcoding
+    print(sue.pay)
+```
+
+***方法*** 只是附加给类并旨在处理那些类的实例的常规函数。实例是方法调用的主体，并且会自动传递给方法的`self`参数。
 
 ### 28.3 步骤3：运算符重载
 
+如果类中定义了`__str__`和`__repr__`，或者从一个超类继承了这两个方法，则每次一个实例转换为其打印字符串的时候，`__str__`和`__repr__`就会自动运行，其直接的效果就是，打印一个对象会显示对象的`__str__`和`__repr__`方法所返回的内容。
+
+这里我们重载运算符`__repr__`，以使打印类的实例时，会列出属性：
+
+```python
+# Add __repr__ overload method for printing objects
+class Person:
+    def __init__(self, name, job=None, pay=0):
+        self.name = name
+        self.job = job
+        self.pay = pay
+    def lastName(self):
+        return self.name.split()[-1]
+    def giveRaise(self, percent):
+        self.pay = int(self.pay * (1 + percent))
+    def __repr__(self): # Added method
+        return '[Person: %s, %s]' % (self.name, self.pay) # String to print
+
+if __name__ == '__main__':
+    bob = Person('Bob Smith')
+    sue = Person('Sue Jones', job='dev', pay=100000)
+    print(bob)
+    print(sue)
+    print(bob.lastName(), sue.lastName())
+    sue.giveRaise(.10)
+    print(sue)
+```
+
+
 
 ### 28.4 步骤4：通过子类定制行为
+
+#### 编写子类
+
+定义一个`Person`的子类`Manager`，并重写超类中的`giveRaise`方法。
+
+#### 扩展方法：不好的方式
+
+以复制粘贴超类`Person`中的代码的方式扩展子类的方法是非常不好的。因为如果一旦改变了涨工资的方式，将必须修改超类和子类两处代码。
+
+```python
+class Manager(Person):
+    def giveRaise(self, percent, bonus=.10):
+        self.pay = int(self.pay * (1 + percent + bonus)) # Bad: cut and paste
+```
+
+#### 扩展方法：好的方式
+
+使用扩展参数来直接调用其超类中最初的版本是扩展方法的好方式：
+
+```python
+class Manager(Person):
+    def giveRaise(self, percent, bonus=.10):
+        Person.giveRaise(self, percent + bonus) # Good: augment original
+```
+
+这段代码利用了这样一个事实： **类方法总是可以在一个实例中调用（Python自动地把实例发送给方法的`self`参数），或者通过类来调用（必须手动地传递实例给类方法）。** 也就是说：
+
+```python
+instance.method(args...)
+```
+
+等价于：
+
+```python
+class.method(instance, args...)
+```
+
+通过类直接调用，有效地扰乱了继承，并且把调用沿着类树向上传递以运行一个特定的版本。
+
+以下是实现本步骤的整个模块文件：
+
+```python
+# Add customization of one behavior in a subclass
+class Person:
+    def __init__(self, name, job=None, pay=0):
+        self.name = name
+        self.job = job
+        self.pay = pay
+    def lastName(self):
+        return self.name.split()[-1]
+    def giveRaise(self, percent):
+        self.pay = int(self.pay * (1 + percent))
+    def __repr__(self):
+        return '[Person: %s, %s]' % (self.name, self.pay)
+
+class Manager(Person):
+    def giveRaise(self, percent, bonus=.10): # Redefine at this level
+        Person.giveRaise(self, percent + bonus) # Call Person's version
+
+if __name__ == '__main__':
+    bob = Person('Bob Smith')
+    sue = Person('Sue Jones', job='dev', pay=100000)
+    print(bob)
+    print(sue)
+    print(bob.lastName(), sue.lastName())
+    sue.giveRaise(.10)
+    print(sue)
+    tom = Manager('Tom Jones', 'mgr', 50000) # Make a Manager: __init__
+    tom.giveRaise(.10) # Runs custom version
+    print(tom.lastName()) # Runs inherited method
+    print(tom) # Runs inherited __repr__
+```
+
+> **关于`super`**
+>
+> To extend inherited methods, the examples in this chapter simply call the original through the superclass name: Person.giveRaise(...). This is the traditional and simplest scheme in Python, and the one used in most of this book.
+>
+> Java programmers may especially be interested to know that Python also has a super built-in function that allows calling back to a superclass’s methods more generically— but it’s cumbersome to use in 2.X; differs in form between 2.X and 3.X; relies on unusual semantics in 3.X; works unevenly with Python’s operator overloading; and does not always mesh well with traditionally coded multiple inheritance, where a single superclass call won’t suffice.
+>
+> In its defense, the super call has a valid use case too—cooperative same-named method dispatch in multiple inheritance trees—but it relies on the “MRO” ordering of classes, which many find esoteric and artificial; unrealistically assumes universal deployment to be used reliably; does not fully support method replacement and varying argument lists; and to many observers seems an obscure solution to a use case that is rare in real Python code.
+>
+> Because of these downsides, this book prefers to call superclasses by explicit name instead of super, recommends the same policy for newcomers, and defers presenting super until Chapter 32. It’s usually best judged after you learn the simpler, and generally more traditional and “Pythonic” ways of achieving the same goals, especially if you’re new to OOP. Topics like MROs and cooperative multiple inheritance dispatch seem a lot to ask of beginners—and others.
+>
+> And to any Java programmers in the audience: I suggest resisting the temptation to use Python’s super until you’ve had a chance to study its subtle implications. Once you step up to multiple inheritance, it’s not what you think it is, and more than you probably expect. The class it invokes may not be the superclass at all, and can even vary per context. Or to paraphrase a movie line: Python’s super is like a box of chocolates—you never know what you’re going to get!
+
+#### 多态实战
+
+为了使得这个从继承获取的行为更为惊人，我们在文件的末尾添加了如下代码：
+
+```python
+if __name__ == '__main__':
+    ...
+    print('--All three--')
+    for obj in (bob, sue, tom): # Process objects generically
+        obj.giveRaise(.10) # Run this object's giveRaise
+        print(obj) # Run the common __repr__
+```
+
+这里利用了Python中的 ***多态*** 。
+
+#### 继承、定制和扩展
+
+实际上，类比我们的例子所展示的更加灵活。通常，类可以 **继承** 、**定制** 或 **扩展** 超类中已有的代码。
+
+例如，我们可以为`Manager`添加`Person`中所没有的方法`someThingElse`：
+
+```python
+class Person:
+    def lastName(self): ...
+    def giveRaise(self): ...
+    def __repr__(self): ...
+        
+class Manager(Person): # Inherit
+    def giveRaise(self, ...): ... # Customize
+    def someThingElse(self, ...): ... # Extend
+        
+tom = Manager()
+tom.lastName() # Inherited verbatim
+tom.giveRaise() # Customized version
+tom.someThingElse() # Extension here
+print(tom) # Inherited overload method
+```
+
+
+
+#### OOP：大思路
+
+在OOP中，我们通过 **定制** 来编程，而不是复制和修改已有的代码。
+
+我们可以通过编写新的子类来裁剪或扩展之前已经做过的工作，而不是每次从头开始。
 
 
 ### 28.5 步骤5：自定义构造函数
