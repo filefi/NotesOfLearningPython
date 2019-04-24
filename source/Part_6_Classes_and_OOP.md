@@ -788,14 +788,128 @@ print(tom) # Inherited overload method
 
 我们可以通过编写新的子类来裁剪或扩展之前已经做过的工作，而不是每次从头开始。
 
-
 ### 28.5 步骤5：自定义构造函数
 
+在上一个例子中，我们必须为`Manager`对象提供一个`job`参数`mgr`，这有点多余。我们重新编写新的`Manager`构造函数，并把创建对象的调用修改为自动传入`mgr`作为超类构造函数的`job`参数。
+
+```python
+# File person.py
+# Add customization of constructor in a subclass
+class Person:
+    def __init__(self, name, job=None, pay=0):
+        self.name = name
+        self.job = job
+        self.pay = pay
+    def lastName(self):
+        return self.name.split()[-1]
+    def giveRaise(self, percent):
+        self.pay = int(self.pay * (1 + percent))
+    def __repr__(self):
+        return '[Person: %s, %s]' % (self.name, self.pay)
+    
+class Manager(Person):
+    def __init__(self, name, pay): # Redefine constructor
+        Person.__init__(self, name, 'mgr', pay) # Run original with 'mgr'
+    def giveRaise(self, percent, bonus=.10):
+        Person.giveRaise(self, percent + bonus)
+
+if __name__ == '__main__':
+    bob = Person('Bob Smith')
+    sue = Person('Sue Jones', job='dev', pay=100000)
+    print(bob)
+    print(sue)
+    print(bob.lastName(), sue.lastName())
+    sue.giveRaise(.10)
+    print(sue)
+    tom = Manager('Tom Jones', 50000) # Job name not needed:
+    tom.giveRaise(.10) # Implied/set by class
+    print(tom.lastName())
+    print(tom)
+```
+
+
+
+#### OOP比我们认为的要简单
+
+Python中OOP的机制：
+
+- 实例创建：填充实例属性。
+- 行为方法：在类方法中封装逻辑。
+- 运算符重载：为打印这样的内置操作提供行为。
+- 定制行为：重新定义子类中的方法以使其特殊化。
+- 定制构造函数：为超类步骤添加初始化逻辑。
+
+#### 组合类的其他方式
+
+一种常见的编码模式是把对象彼此嵌套以组成 ***复合对象*** 。
+
+下面使用这种组合的思想来编写`Manager`扩展代码，将它嵌入一个`Person`中，而不是继承`Person`。这里使用重载`__getattr__`运算符的方法来做到这点：
+
+```python
+# File person-composite.py
+# Embedding-based Manager alternative
+class Person:
+    ...same...
+class Manager:
+    def __init__(self, name, pay):
+        self.person = Person(name, 'mgr', pay) # Embed a Person object
+    def giveRaise(self, percent, bonus=.10):
+        self.person.giveRaise(percent + bonus) # Intercept and delegate
+    def __getattr__(self, attr):
+        return getattr(self.person, attr) # Delegate all other attrs
+    def __repr__(self):
+        return str(self.person) # Must overload again (in 3.X)
+
+if __name__ == '__main__':
+    ...same...
+```
+
+此外，像下面这样的一个假设的`Department`可能聚合其他的对象，以便将它们当作一个集合对待。将这段代码添加到`person.py`文件的底部：
+
+```python
+# File person-department.py
+# Aggregate embedded objects into a composite
+class Person:
+    ...same...
+    
+class Manager(Person):
+    ...same...
+    
+class Department:
+    def __init__(self, *args):
+        self.members = list(args)
+    def addMember(self, person):
+        self.members.append(person)
+    def giveRaises(self, percent):
+        for person in self.members:
+            person.giveRaise(percent)
+    def showAll(self):
+        for person in self.members:
+            print(person)
+            
+if __name__ == '__main__':
+    bob = Person('Bob Smith')
+    sue = Person('Sue Jones', job='dev', pay=100000)
+    tom = Manager('Tom Jones', 50000)
+    development = Department(bob, sue) # Embed objects in a composite
+    development.addMember(tom)
+    development.giveRaises(.10) # Runs embedded objects' giveRaise
+    development.showAll() # Runs embedded objects' __repr__
+```
+
+
+
+> **在Python 3.X中捕获内置属性**
+>
+> 
 
 ### 28.6 步骤6：使用内省工具
 
 
+
 ### 28.7 步骤7（最后一步）：把对象存储到数据库中
+
+
 
 
 ### 28.8 未来的方向
