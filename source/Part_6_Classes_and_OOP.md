@@ -901,9 +901,114 @@ if __name__ == '__main__':
 
 > **在Python 3.X中捕获内置属性**
 >
-> 
+> 高级特性，暂略
 
 ### 28.6 步骤6：使用内省工具
+
+我们的代码仍然存在两个问题：
+
+- 当打印`tom`时，`Manager`会把它标记为`Person`。
+- 我们还无法通过`Manager`的构造函数验证`tom`工作名已经正确地设置为`mgr`，因为我们为`Person`编写的`__str__`没有打印出这个字段。
+
+#### 特殊类属性
+
+***内省工具*** 是特殊的属性和函数，允许我们访问对象实现的一些内部机制，并允许我们编写以通用方式处理类的代码。通常只有为程序员开发工具的人才会用到这些高级工具。
+
+有两个钩子可以解决我们的问题：
+
+- 内置的`instance.__class__`属性提供了一个从实例到创建它的类的链接。类则有`__name__`和`__bases__`序列，提供了超类的访问。我们使用这些来打印创建一个实例的类的名字，而不是通过硬编码来做到。
+- 内置的`object.__dict__`属性提供了一个字典，带有一个“键/值”对，以便每个属性都附加到一个命名控件对象（包括模块、类和实例）。由于它是字典，因此我们可以获取键的列表、按键来索引、迭代键，等等，从而更广泛地处理所有的属性。
+
+下面是这些工具在Python交互模式中实际使用的情形：
+
+```python
+>>> from person import Person
+>>> bob = Person('Bob Smith')
+>>> bob # Show bob's __repr__ (not __str__)
+[Person: Bob Smith, 0]
+>>> print(bob) # Ditto: print => __str__ or __repr__
+[Person: Bob Smith, 0]
+>>>
+>>> bob.__class__ # Show bob's class and its name
+<class 'person.Person'>
+>>> bob.__class__.__name__
+'Person'
+>>>
+>>> list(bob.__dict__.keys()) # Attributes are really dict keys
+['pay', 'job', 'name'] # Use list to force list in 3.X
+>>>
+>>> for key in bob.__dict__:
+        print(key, '=>', bob.__dict__[key]) # Index manually
+pay => 0
+job => None
+name => Bob Smith
+>>> for key in bob.__dict__:
+        print(key, '=>', getattr(bob, key)) # obj.attr, but attr is a var
+pay => 0
+job => None
+name => Bob Smith
+```
+
+> 如果一个实例的类定义了`__slots__`，而实例可能没有存储在`__dict__`字典中，但实例的一些属性也是可以访问的。这是新式类（以及Python 3.X中所有类）的一项可选的和相对不太明确的功能，即，把属性存储在数组中。
+
+#### 一种通用显示工具
+
+在下面的模块`classtools.py`中，类`AttrDisplay`将对任何实例有效，不管实例的属性集合是什么。这使得类`AttrDisplay`变成了一个公用的工具。通过继承，它可以混合到想到使用它显示格式的任何类中。
+
+```python
+# File classtools.py (new)
+"Assorted class utilities and tools"
+class AttrDisplay:
+    """
+    Provides an inheritable display overload method that shows
+    instances with their class names and a name=value pair for
+    each attribute stored on the instance itself (but not attrs
+    inherited from its classes). Can be mixed into any class,
+    and will work on any instance.
+    """
+    def gatherAttrs(self):
+        attrs = []
+        for key in sorted(self.__dict__):
+        attrs.append('%s=%s' % (key, getattr(self, key)))
+        return ', '.join(attrs)
+    def __repr__(self):
+        return '[%s: %s]' % (self.__class__.__name__, self.gatherAttrs())
+
+if __name__ == '__main__':
+    class TopTest(AttrDisplay):
+        count = 0
+        def __init__(self):
+            self.attr1 = TopTest.count
+            self.attr2 = TopTest.count+1
+            TopTest.count += 2
+
+    class SubTest(TopTest):
+        pass
+
+X, Y = TopTest(), SubTest() # Make two instances
+print(X) # Show all instance attrs
+print(Y) # Show lowest class name
+```
+
+直接运行模块`classtools.py`，这个模块的自测试代码会创建2个实例并打印它们。这里定义的`__str__`显示了实例的类，及其所有的属性名和值，并按照属性名排序：
+
+```python
+C:\code> classtools.py
+[TopTest: attr1=0, attr2=1]
+[SubTest: attr1=2, attr2=3]
+```
+
+#### 实例VS类属性
+
+
+
+#### 工具类的命名考虑
+
+
+
+#### 类的最终形式
+
+
 
 
 
