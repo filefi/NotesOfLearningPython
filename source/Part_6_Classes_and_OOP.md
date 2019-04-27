@@ -1000,19 +1000,122 @@ C:\code> classtools.py
 
 #### 实例VS类属性
 
+可以用`__class__`连接爬升到实例的类，然后使用`__dict__`去获取类属性，然后迭代类的`__bases__`属性爬升到更高的超类。有必要的话还可以重复此过程。
 
+```python
+>>> list(bob.__dict__.keys()) # 3.X keys is a view, not a list
+['name', 'job', 'pay']
+>>> dir(bob) # 3.X includes class type methods
+['__class__', '__delattr__', '__dict__', '__dir__', '__doc__', '__eq__',
+'__format__', '__ge__', '__getattribute__', '__gt__', '__hash__', '__init__',
+...more omitted: 31 attrs...
+'__setattr__', '__sizeof__', '__str__', '__subclasshook__', '__weakref__',
+'giveRaise', 'job', 'lastName', 'name', 'pay']
+```
 
 #### 工具类的命名考虑
 
+为了减少名称冲突的机会，Python程序员常常对于不想做其他用途的方法添加一个 **单下划线** 的前缀，在这个例子中就是`_gatherAttrs`。
 
+另一种更好的，但不太常用的方法是，在方法名前面使用 **两个下划线** 的前缀，在这个例子中就是`__gatherAttrs`。Python自动扩展这样的名称，以包含类的名称，从而使它们变得真正唯一。这一功能叫做 **伪私有类属性** 。
 
 #### 类的最终形式
 
+新的打印重载方法将会由`Person`的实例继承，`Manager`的实例也会继承`Person`的`__str__`。
 
+```python
+# File classtools.py (new)
+...as listed earlier...
+# File person.py (final)
+"""
+Record and process information about people.
+Run this file directly to test its classes.
+"""
+from classtools import AttrDisplay # Use generic display tool
+
+class Person(AttrDisplay): # Mix in a repr at this level
+    """
+    Create and process person records
+    """
+    def __init__(self, name, job=None, pay=0):
+        self.name = name
+        self.job = job
+        self.pay = pay
+
+    def lastName(self): # Assumes last is last
+        return self.name.split()[-1]
+    
+    def giveRaise(self, percent): # Percent must be 0..1
+        self.pay = int(self.pay * (1 + percent))
+        
+class Manager(Person):
+    """
+    A customized Person with special requirements
+    """
+    def __init__(self, name, pay):
+        Person.__init__(self, name, 'mgr', pay) # Job name is implied
+    def giveRaise(self, percent, bonus=.10):
+        Person.giveRaise(self, percent + bonus)
+        
+if __name__ == '__main__':
+    bob = Person('Bob Smith')
+    sue = Person('Sue Jones', job='dev', pay=100000)
+    print(bob)
+    print(sue)
+    print(bob.lastName(), sue.lastName())
+    sue.giveRaise(.10)
+    print(sue)
+    tom = Manager('Tom Jones', 50000)
+    tom.giveRaise(.10)
+    print(tom.lastName())
+    print(tom)
+```
+
+由于`AttrDisplay`直接从`self`实例中提取了类名，所以每个对象都显示其最近的（最低的）类的名称：`tom`现在显示为`Manager`，而不是`Person`。并且我们最终验证了其`job`也已经由`Manager`的构造函数正确地填充为`mgr`：
+
+```python
+C:\code> person.py
+[Person: job=None, name=Bob Smith, pay=0]
+[Person: job=dev, name=Sue Jones, pay=100000]
+Smith Jones
+[Person: job=dev, name=Sue Jones, pay=110000]
+Jones
+[Manager: job=mgr, name=Tom Jones, pay=60000]
+```
 
 
 
 ### 28.7 步骤7（最后一步）：把对象存储到数据库中
+
+在最后一步，让我们把对象持久化。
+
+#### Pickle和Shelve
+
+对象持久化通过3个标准的库模块来实现，这3个模块在Python中都可用：
+
+- `pickle`：任意Python对象的字节串之间的序列化。
+- `dbm`（在Python 2.X中叫做`anydbm`）：实现一个可通过键访问的文件系统，以存储字符串。
+- `shelve`：使用另两个模块按照键把Python对象存储到一个文件中。
+
+##### `pickle`模块
+
+
+
+##### `shelve`模块
+
+
+
+
+
+#### 在shelve数据库中存储对象
+
+
+
+#### 交互地探索`shelve`
+
+
+
+#### 更新`shelve`中的对象
 
 
 
