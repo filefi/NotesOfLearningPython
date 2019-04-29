@@ -1103,13 +1103,27 @@ Jones
 
 ##### `shelve`模块
 
+`shelve`使用`pickle`把一个对象转换为`pickle`化的字符串，并将其存储在一个`dbm`文件中的键之下；之后载入的时候，`shelve`通过键获取`pickle`化的字符串，并用`pickle`在内存中重新创建最初的对象。
 
+对于脚本来说，一个`shelve`的`pickle`化的对象看上去就像是字典，它们之间唯一的区别就是：必须先 **打开** `shelve`并且在修改之后，必须 **关闭** 它。`shelve`自动吧字典操作映射到存储在文件中的对象。
 
-
+最终的效果就是，一个`shelve`提供了一个简单的数据库来按照键存储和获取本地的Python对象，并由此使它们跨程序运行而保持持久化。
 
 #### 在shelve数据库中存储对象
 
+```python
+# File makedb.py: store Person objects on a shelve database
+from person import Person, Manager # Load our classes
+bob = Person('Bob Smith') # Re-create objects to be stored
+sue = Person('Sue Jones', job='dev', pay=100000)
+tom = Manager('Tom Jones', 50000)
 
+import shelve
+db = shelve.open('persondb') # Filename where objects are stored
+for obj in (bob, sue, tom): # Use object's name attr as key
+    db[obj.name] = obj # Store object on shelve by key
+db.close() # Close after making changes
+```
 
 #### 交互地探索`shelve`
 
@@ -1158,3 +1172,14 @@ Jones
 
 
 ## 第31章 类的设计
+
+
+
+
+
+---
+
+
+
+## 第32章 类的高级话题
+
