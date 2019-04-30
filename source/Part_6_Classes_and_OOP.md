@@ -1127,14 +1127,109 @@ db.close() # Close after making changes
 
 #### 交互地探索`shelve`
 
+此时，当前的目录下会有一个或多个文件名以`persondb`开头的文件。我们的数据库存储在3个文件中：
 
+```python
+>>> import glob
+>>> glob.glob('persondb*')
+['persondb.bak', 'persondb.dat', 'persondb.dir']
+```
+
+如果愿意，可以查看`shelve`的文件，但是它们是二进制文件，并且大多数内容对于`shelve`模块以外的环境没有太多意义。
+```python
+>>> print(open('persondb.dir').read())
+'Sue Jones', (512, 92)
+'Tom Jones', (1024, 91)
+'Bob Smith', (0, 80)
+>>> print(open('persondb.dat','rb').read())
+b'\x80\x03cperson\nPerson\nq\x00)\x81q\x01}q\x02(X\x03\x00\x00\x00jobq\x03NX\x03\x00
+...more omitted...
+```
+
+由于`shelve`是包含了对象的对象，所以我们可以用常规的Python语法和开发模式来处理它：
+```python
+>>> import shelve
+>>> db = shelve.open('persondb')        # Reopen the shelve
+>>> len(db)                             # Three 'records' stored
+3
+>>> list(db.keys())                     # keys is the index
+['Sue Jones', 'Tom Jones', 'Bob Smith'] # list() to make a list in 3.X
+>>> bob = db['Bob Smith']               # Fetch bob by key
+>>> bob                                 # Runs __repr__ from AttrDisplay
+[Person: job=None, name=Bob Smith, pay=0]
+>>> bob.lastName()                      # Runs lastName from Person
+'Smith'
+>>> for key in db:                      # Iterate, fetch, print
+print(key, '=>', db[key])
+Sue Jones => [Person: job=dev, name=Sue Jones, pay=100000]
+Tom Jones => [Manager: job=mgr, name=Tom Jones, pay=50000]
+Bob Smith => [Person: job=None, name=Bob Smith, pay=0]
+>>> for key in sorted(db):
+print(key, '=>', db[key])               # Iterate by sorted keys
+Bob Smith => [Person: job=None, name=Bob Smith, pay=0]
+Sue Jones => [Person: job=dev, name=Sue Jones, pay=100000]
+Tom Jones => [Manager: job=mgr, name=Tom Jones, pay=50000]
+```
+
+注意，为了载入和使用存储的对象，我们不必先导入`Person`或`Manager`类。因为Python对一个类实例进行`pickle`操作会记录其`self`实例属性，以及创建实例的类的名字和位置。当随后从`shelve`中获取`bob`并对其`unpickle`的时候，Python将自动地重新导入该类并且将`bob`连接到它。
+
+**只有在创建新势力的时候，才必须提前导入类。在处理已有实例的时候，则不必提前导入类。**
 
 #### 更新`shelve`中的对象
 
+如下的文件`updatedb.py`打印出数据库，并且每次把我们所存储的对象之一增加一次。
 
+```python
+# File updatedb.py: update Person object on database
+import shelve
+db = shelve.open('persondb')      # Reopen shelve with same filename
+
+for key in sorted(db):            # Iterate to display database objects
+    print(key, '\t=>', db[key])       # Prints with custom format
+
+sue = db['Sue Jones']             # Index by key to fetch
+sue.giveRaise(.10)                # Update in memory using class's method
+db['Sue Jones'] = sue             # Assign to key to update in shelve
+db.close()                        # Close after making changes
+```
+
+运行这段脚本几次以看到对象的变化：
+```python
+C:\code> updatedb.py
+Bob Smith => [Person: job=None, name=Bob Smith, pay=0]
+Sue Jones => [Person: job=dev, name=Sue Jones, pay=100000]
+Tom Jones => [Manager: job=mgr, name=Tom Jones, pay=50000]
+C:\code> updatedb.py
+Bob Smith => [Person: job=None, name=Bob Smith, pay=0]
+Sue Jones => [Person: job=dev, name=Sue Jones, pay=110000]
+Tom Jones => [Manager: job=mgr, name=Tom Jones, pay=50000]
+C:\code> updatedb.py
+Bob Smith => [Person: job=None, name=Bob Smith, pay=0]
+Sue Jones => [Person: job=dev, name=Sue Jones, pay=121000]
+Tom Jones => [Manager: job=mgr, name=Tom Jones, pay=50000]
+C:\code> updatedb.py
+Bob Smith => [Person: job=None, name=Bob Smith, pay=0]
+Sue Jones => [Person: job=dev, name=Sue Jones, pay=133100]
+Tom Jones => [Manager: job=mgr, name=Tom Jones, pay=50000]
+```
+
+再一次，我们可以在交互模式中验证脚本的作用：
+```python
+C:\code> python
+>>> import shelve
+>>> db = shelve.open('persondb') # Reopen database
+>>> rec = db['Sue Jones'] # Fetch object by key
+>>> rec
+[Person: job=dev, name=Sue Jones, pay=146410]
+>>> rec.lastName()
+'Jones'
+>>> rec.pay
+146410
+```
 
 
 ### 28.8 未来的方向
+略
 
 
 
