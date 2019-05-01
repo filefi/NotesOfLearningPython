@@ -1239,14 +1239,320 @@ C:\code> python
 ## 第29章 类编码细节
 ### 29.1 `class`语句
 
+和C++或Java不同，Python的`class`语句并不是声明。
+
+就像`def`一样，`class`语句是对象的创建者并且是一个隐含的赋值运算：执行时，它会创建类对象，然后把其引用值存储在前面所使用的变量名。
+
+就像`def`一样，`class`语句也是真正的可执行代码。直到Python抵达并运行定义的`class`语句前，你的类都不存在。
+
+#### 一般形式
+
+`class`是复合语句，其主体一般出现在缩进的语句块中。以下是`class`语句的一般形式：
+
+```python
+class name(superclass,...):  # Assign to name
+    attr = value             # Shared class data
+    def method(self,...):    # Methods
+        self.attr = value    # Per-instance data
+```
+
+在`class`语句内，任何赋值语句都会产生类属性和特殊命名的方法重载运算符。例如，名为`__init__`的函数会在实例对象构造时调用（如果定义过的话）。
+
+#### 例子
+
+类几乎就是命名空间，因此，类就像模块和函数：
+
+- 就像函数一样，`class`语句是本地作用域，由内嵌的赋值语句建立的变量名，就存在于这个本地作用域内。
+- 就像模块内的变量名，在`class`语句内赋值的变量名就变成类对象的属性；而内嵌的`def`则会创建类对象的方法。
+
+类和它们的不同之处在于，类的命名空间是Python继承的基础。在类或实例对象中找不到的所引用的属性，就会从继承树中的其他类获取。
+
+例如，把简单的非函数的对象赋值给类属性，就会产生 ***数据属性*** ，由所有实例共享：
+
+```python
+>>> class SharedData:
+        spam = 42         # Generates a class data attribute
+>>> x = SharedData()      # Make two instances
+>>> y = SharedData()
+>>> x.spam, y.spam        # They inherit and share 'spam' (a.k.a. SharedData.spam)
+(42, 42)
+```
+
+我们可以通过类名称修改类属性，或者通过实例或类引用类属性：
+
+```python
+>>> SharedData.spam = 99
+>>> x.spam, y.spam, SharedData.spam
+(99, 99, 99)
+```
+
+> 这与C++的静态数据成员的概念有些类似：也就是存储在类中的成员，与实例不相关。
+
+通过实例而不是类来给变量名`spam`赋值，就会在该实例内创建或修改变量名，而不是在共享的类中：
+
+```python
+>>> x.spam = 88
+>>> x.spam, y.spam, SharedData.spam
+(88, 99, 99)
+```
+
+下面的例子，我们把相同的变量名存储在类对象（由类中的`data`赋值运算所创建）和实例对象中（由`__init__`中的`self.data`赋值运算所创建）：
+
+```python
+class MixedNames:                           # Define class
+    data = 'spam'                           # Assign class attr
+    def __init__(self, value):              # Assign method name
+        self.data = value                   # Assign instance attr
+    def display(self):
+        print(self.data, MixedNames.data)   # Instance attr, class attr
+```
+
+结果就是`data`存在于2个地方：在实例对象内，以及在实例继承变量名的类中。
+```python
+>>> x = MixedNames(1)         # Make two instance objects
+>>> y = MixedNames(2)         # Each has its own data
+>>> x.display(); y.display()  # self.data differs, MixedNames.data is the same
+1 spam
+2 spam
+```
+
+利用这些技术把属性存储在不同对象内，我们可以决定属性的可见范围。附加在类上时，变量名是共享的；附加在实例上时，变量名是属于每个实例的数据，而不是共享的行为或数据。
 
 ### 29.2 方法
 
+方法位于`class`语句的主体内，是由`def`语句建立的函数对象。从抽象的视角来看，方法替实例对象提供了要继承的行为。
+
+方法和函数的唯一区别就是：方法的第一个参数（按惯例被称为`self`）总是接收调用方法的实例对象。如下所示：
+
+```python
+instance.method(args...)
+```
+
+Python会自动将以上形式的 *实例方法调用* 翻译成以下形式的 *类方法函数调用* ：
+
+```python
+class.method(instance, args...)
+```
+
+事实上，这两种调用形式在Python中都有效。
+
+#### 例子
+
+```python
+class NextClass:                # Define class
+    def printer(self, text):    # Define method
+        self.message = text     # Change instance
+        print(self.message)     # Access instance
+```
+
+```python
+>>> x = NextClass()             # Make instance
+>>> x.printer('instance call')  # Call its method
+instance call
+>>> x.message                   # Instance changed
+'instance call'
+```
+
+方法能通过实例或类本身两种方法其中的任意一种进行调用。例如，可以通过类的名称调用`printer`，只要明确地传递了一个实例给`self`参数：
+
+```python
+>>> NextClass.printer(x, 'class call')   # Direct class call
+class call
+>>> x.message                            # Instance changed again
+'class call'
+```
+
+实际上，在默认情况下，如果尝试不带任何实例调用方法时，就会引发错误：
+
+```python
+>>> NextClass.printer('bad call')
+TypeError: unbound method printer() must be called with NextClass instance...
+```
+
+#### 调用超类构造函数
+
+在构造时，Python会找出并且只调用一个`__init__`方法，所以，如果要保证子类的构造函数也会执行超类构造时的逻辑，一般都必须通过类明确地调用超类的`__init__`方法。
+
+```python
+class Super:
+    def __init__(self, x):
+    ...default code...
+
+class Sub(Super):
+    def __init__(self, x, y):
+    Super.__init__(self, x)     # Run superclass __init__
+    ...custom code...           # Do my init actions
+
+I = Sub(1, 2)
+```
+
+#### 其他方法调用的可能性
+
+***静态方法*** 可让你编写不预期第一参数为实例对象的方法。
+
+***类方法*** 当调用的时候接受一个类而不是一个实例，并且它可以用来管理基于每个类的数据。
+
+> Python 也有一个内置函数 `super` ，该函数允许更通用地回调一个超类的方法。
 
 ### 29.3 继承
 
+`class`语句作为命名空间工具是Python变量名继承的基础。
+
+在Python中，每当使用`object.attr`形式的表达式对对象进行点号运算时，就会发生继承，而且涉及了搜索属性定义树（一或多个命名空间）。
+
+#### 属性树的构造
+
+下图总结了命名空间树构造以及填入变量名的方式。通常来说：
+
+- 实例属性是由对方法内`self`属性进行赋值运算而生成的。
+- 类属性是通过`class`语句内的语句（赋值语句）而生成的。
+- 超类的连接是通过`class`语句首行的括号内列出类而生成的。
+
+![Figure 29-1](_static/images/Part_6_Classes_and_OOP.assets/1556719020836.png)
+
+
+#### 继承方法的专有化
+重新定义继承变量名的概念引出了各种专有化技术。例如，子类可以完全取代继承的属性，提供超类可以找到的属性，并且通过已覆盖的方法回调超类来扩展超类的方法。下面是如何进行扩展的例子：
+```python
+>>> class Super:
+        def method(self):
+            print('in Super.method')
+>>> class Sub(Super):
+        def method(self):                   # Override method
+            print('starting Sub.method')    # Add actions here
+            Super.method(self)              # Run default action
+            print('ending Sub.method')
+```
+
+`Sub`在重新`Super`的方法时，又回调了`Super`中的方法，换句话说，`Sub.method`只是扩展了`Super.method`的行为，而不要完全取代了它：
+```python
+>>> x = Super()        # Make a Super instance
+>>> x.method()         # Runs Super.method
+in Super.method
+>>> x = Sub()          # Make a Sub instance
+>>> x.method()         # Runs Sub.method, calls Super.method
+starting Sub.method
+in Super.method
+ending Sub.method
+```
+
+#### 类接口技术
+扩展只是一种与超类接口的方式。下面所展示的`specialize.py`文件定义了多个类，示范了一些常用技巧：
+- `Super`：定义一个`method`函数以及在子类中期待一个动作的`delegate`。
+- `Inheritor`：没有提供任何新的变量名，因此会获得`Super`中定义的一切内容。
+- `Replacer`：用自己的版本覆盖`Super`的`method`。
+- `Extender`：覆盖并回调默认`method`，从而定制`Super`的`method`。
+- `Provider`：实现`Super`的`delegate`方法预期的`action`方法。
+
+```python
+class Super:
+    def method(self):
+        print('in Super.method')                 # Default behavior
+    def delegate(self):
+        self.action()                            # Expected to be defined
+
+class Inheritor(Super):                          # Inherit method verbatim
+    pass
+
+class Replacer(Super):                           # Replace method completely
+    def method(self):
+        print('in Replacer.method')
+
+class Extender(Super):                           # Extend method behavior
+    def method(self):
+        print('starting Extender.method')
+        Super.method(self)
+        print('ending Extender.method')
+
+class Provider(Super):                           # Fill in a required method
+    def action(self):
+        print('in Provider.action')
+
+if __name__ == '__main__':
+    for klass in (Inheritor, Replacer, Extender):
+        print('\n' + klass.__name__ + '...')
+        klass().method()
+    print('\nProvider...')
+    x = Provider()
+    x.delegate()
+```
+
+以下是执行这个文件时的结果：
+```python
+% python specialize.py
+Inheritor...
+in Super.method
+Replacer...
+in Replacer.method
+Extender...
+starting Extender.method
+in Super.method
+ending Extender.method
+Provider...
+in Provider.action
+```
+
+
+#### 抽象超类
+***抽象超类*** 是指类的部分行为默认是由其子类所提供的。
+
+
+##### Python 3.X和2.6+ 中的抽象超类
+
+在Python 3.X和Python 2.6+中，抽象超类需要由子类填充的方法，可以使用特殊的类语法来实现。
+
+在Python 3.X，我们在一个`class`头部使用一个关键字参数，以及特殊的`@`装饰器语法：
+
+```python
+from abc import ABCMeta, abstractmethod
+class Super(metaclass=ABCMeta):
+    @abstractmethod
+    def method(self, ...):
+        pass
+```
+
+具有这样抽象方法的类不能产生实例，除非在类树的较低层级定义了该方法。例如，在Python 3.X中，与前一小节的例子等价的特殊语法如下：
+
+```python
+>>> from abc import ABCMeta, abstractmethod
+>>>
+>>> class Super(metaclass=ABCMeta):
+        def delegate(self):
+            self.action()
+        @abstractmethod
+        def action(self):
+            pass
+>>> X = Super()
+TypeError: Can't instantiate abstract class Super with abstract methods action
+>>> class Sub(Super): pass
+>>> X = Sub()
+TypeError: Can't instantiate abstract class Sub with abstract methods action
+>>> class Sub(Super):
+def action(self): print('spam')
+>>> X = Sub()
+>>> X.delegate()
+spam
+```
+
+按照这种方式编写代码，带有一个抽象方法的类是不能继承的（即，我们不能通过它来创建实例），除非其所有的抽象方法都已经在子类中定义了。
 
 ### 29.4 命名空间：结论
+
+#### 简单变量名
+
+无点号的简单变量名遵循函数LEGB作用域法则。
+
+- 赋值语句（`X = value`）：
+- 引用（`X`）：
+
+#### 属性名称
+
+点号的属性名指的是特定对象的属性，并且遵循模块和类的规则。就类和实例对象而言，引用规则增加了继承搜索这个流程。
+
+- 赋值语句（`object.X = value`）：
+- 引用（object.X）：
+
+#### Python命名空间的“禅”
 
 
 ### 29.5 回顾文档字符串
