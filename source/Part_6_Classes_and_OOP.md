@@ -1838,6 +1838,72 @@ I am: spam.method.__doc__ or self.method.__doc__
 
 ### 30.1 基础知识
 
+实际上，***运算符重载*** 只是意味着在类方法中**拦截**内置的操作，即，当类的实例出现在内置操作中，Python自动调用你的方法，并将该方法的返回值变成响应操作的结果。
+
+- 运算符重载让类拦截常规的Python运算。
+- 类可重载所有Python表达式运算符。
+- 类也可重载打印、函数调用、属性点号运算等内置运算。
+- 重载使类实例的行为像内置类型。
+- 重载是通过提供特殊名称的类方法来实现的。
+
+运算符重载方法并非必需的，并且通常也不是默认的；如果你没有编写或继承一个运算符重载方法，只是意味着你的类不支持相应的操作。
+
+#### 构造函数和表达式：`__init__`和`__sub__`
+
+如下文件`number.py`中的`Number`类提供了一个方法`__init__`来拦截实例的构造函数，`__sub__`则捕获减法表达式：
+
+```python
+# File number.py
+class Number:
+    def __init__(self, start):             # On Number(start)
+        self.data = start
+    def __sub__(self, other):              # On instance - other
+        return Number(self.data - other)   # Result is a new instance
+```
+
+```python
+>>> from number import Number              # Fetch class from module
+>>> X = Number(5)                          # Number.__init__(X, 5)
+>>> Y = X - 2                              # Number.__sub__(X, 2)
+>>> Y.data                                 # Y is new Number instance
+3
+```
+
+#### 常见的运算符重载方法
+
+所有重载方法的名称前后都有两个下划线字符，以便把同类中定义的变量名区别开来。
+
+特殊方法名称和表达式或运算的映射关系，是由Python语言预先定义好的。例如，方法名`__add__`按照Python语言的定义，无论`__add__`方法的代码实际在做什么，总是对应到了表达式`+`。
+
+下表中列出了一些最常用的重载方法：
+
+|   Method   |   Implements   |   Called for   |
+| :--- | :--- | :--- |
+|   `__init__`   |   Constructor   |   Object creation: `X = Class(args)`   |
+|   `__del__`   |   Destructor   |   Object reclamation of `X`   |
+|   `__add__`   |   Operator `+`   |   `X + Y`, `X += Y` if no `__iadd__`   |
+|   `__or__`   |   Operator `|` (bitwise OR)   |   `X | Y`,` X |= Y` if no `__ior__`   |
+|   `__repr__`, `__str__`   |   Printing, conversions   |   `print(X)`,` repr(X)`, `str(X)`   |
+|   `__call__`   |   Function calls    |   `X(*args, **kargs)`   |
+|   `__getattr__`   |   Attribute fetch   |   `X.undefined`   |
+|   `__setattr__`   |   Attribute assignment   |   `X.any = value`   |
+|   `__delattr__`   |   Attribute deletion   |   `del X.any`   |
+|   `__getattribute__`   |   Attribute fetch   |   `X.any`   |
+|   `__getitem__`   |   Indexing, slicing, iteration   |   `X[key]`, `X[i:j]`, for loops and other iterations if no `__iter__`   |
+|   `__setitem__`   |   Index and slice assignment   |   `X[key] = value`, `X[i:j] = iterable`   |
+|   `__delitem__`   |   Index and slice deletion   |   `del X[key]`, `del X[i:j]`   |
+|   `__len__`   |   Length   |   `len(X)`, truth tests if no `__bool__`   |
+|   `__bool__`   |   Boolean tests   |   `bool(X)`, truth tests (named `__nonzero__` in 2.X)   |
+|   `__lt__`, `__gt__`,`__le__`, `__ge__`,`__eq__`, `__ne__`   |   Comparisons   |   `X < Y`, `X > Y`, `X <= Y`, `X >= Y`, `X == Y`, `X != Y` (or else `__cmp__` in 2.X only)   |
+|   `__radd__`   |   Right-side operators   |   `Other + X`   |
+|   `__iadd__`   |   In-place augmented operators   |   `X += Y` (or else `__add__`)   |
+|   `__iter__`, `__next__`   |   Iteration contexts   |   `I=iter(X)`, `next(I)`; for loops, in if no `__contains__`, all comprehensions, `map(F,X)`, others (`__next__` is named next in 2.X)   |
+|   `__contains__`   |   Membership test   |   `item in X` (any iterable)   |
+|   `__index__`   |   Integer value   |   `hex(X)`, `bin(X)`, `oct(X)`, `O[X]`, `O[X:]` (replaces 2.X `__oct__`, `__hex__`)   |
+|   `__enter__`, `__exit__`   |   Context manager (Chapter 34)   |   `with obj as var:`   |
+|   `__get__`, `__set__`,`__delete__`   |   Descriptor attributes (Chapter 38)   |`X.attr`, `X.attr = value`, `del X.attr`|
+|   `__new__`   |   Creation (Chapter 40)   |   Object creation, before `__init__`   |
+
 
 
 ### 30.2 索引和分片：`__getitem__`和`__setitem__`
