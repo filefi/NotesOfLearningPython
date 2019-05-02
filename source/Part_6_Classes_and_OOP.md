@@ -1494,7 +1494,52 @@ in Provider.action
 
 
 #### 抽象超类
-***抽象超类*** 是指类的部分行为默认是由其子类所提供的。
+***抽象超类*** 是指类的部分行为默认是由其子类所提供的。如果预期的方法没有在子类中定义，当继承搜索失败时，Python会引发未定义变量名的异常。
+
+类的编写者偶尔会使用`assert`语句引发内置的异常`NotImplementedError`，使得这种子类需求更为明显。下面是使用`assert`来实现抽象超类的实例：
+
+```python
+class Super:
+    def delegate(self):
+        self.action()
+    def action(self):
+        assert False, 'action must be defined!'  # If this version is called
+```
+```python
+>>> X = Super()
+>>> X.delegate()
+AssertionError: action must be defined!
+```
+
+此外，有些类只在该类的不完整方法中直接使用`raise`语句产生`NotImplementedError`异常：
+
+```python
+class Super:
+    def delegate(self):
+        self.action()
+    def action(self):
+        raise NotImplementedError('action must be defined!')
+```
+
+```python
+>>> X = Super()
+>>> X.delegate()
+NotImplementedError: action must be defined!
+```
+
+对于子类的实例，除非子类提供了预期实现的方法来重写超类中的默认方法，否则将得到异常：
+
+```python
+>>> class Sub(Super): pass
+>>> X = Sub()
+>>> X.delegate()
+NotImplementedError: action must be defined!
+>>> class Sub(Super):
+        def action(self): print('spam')
+>>> X = Sub()
+>>> X.delegate()
+spam
+```
 
 
 ##### Python 3.X和2.6+ 中的抽象超类
@@ -1542,23 +1587,247 @@ spam
 
 无点号的简单变量名遵循函数LEGB作用域法则。
 
-- 赋值语句（`X = value`）：
-- 引用（`X`）：
+- 赋值语句（`X = value`）：除非简单变量`X`被声明为`global`或`nonlocal`，否则简单变量名的赋值语句在当前作用域内，创建或改变变量名`X`。
+- 引用（`X`）：按照LEGB作用域法则搜索变量名`X`。
 
 #### 属性名称
 
 点号的属性名指的是特定对象的属性，并且遵循模块和类的规则。就类和实例对象而言，引用规则增加了继承搜索这个流程。
 
-- 赋值语句（`object.X = value`）：
-- 引用（object.X）：
+- 赋值语句（`object.X = value`）：点号运算符在对象的命名空间内创建或修改属性名`X`。继承树的搜索只发生在属性引用时，而不是属性的赋值运算时。
+- 引用（object.X）：对基于类的对象而言，会在对象内搜索属性`X`，然后是其上所有可读取的类（使用继承搜索流程）。对于不是基于类的对象而言（例如，模块），则是从对象中直接读取属性`X`。
 
 #### Python命名空间的“禅”
 
+文件`manynames.py`示范了本书中遇到的所有命名空间的概念和规则：
+
+```python
+# File manynames.py
+X = 11                 # Global (module) name/attribute (X, or manynames.X)
+
+def f():
+    print(X)           # Access global X (11)
+
+def g():
+    X = 22             # Local (function) variable (X, hides module X)
+    print(X)
+
+class C:
+    X = 33             # Class attribute (C.X)
+    def m(self):
+        X = 44         # Local variable in method (X)
+        self.X = 55    # Instance attribute (instance.X)
+
+if __name__ == '__main__':
+    print(X)           # 11: module (a.k.a. manynames.X outside file)
+    f()                # 11: global
+    g()                # 22: local
+    print(X)           # 11: module name unchanged
+    obj = C()          # Make instance
+    print(obj.X)       # 33: class name inherited by instance
+    obj.m()            # Attach attribute name X to instance now
+    print(obj.X)       # 55: instance
+    print(C.X)         # 33: class (a.k.a. obj.X if no X in instance)
+    #print(C.m.X)      # FAILS: only visible in method
+    #print(g.X)        # FAILS: only visible in function
+```
+
+在另一个文件`otherfile.py`内导入`manynames.py`模块并读取其中定义的变量名：
+
+```python
+# otherfile.py
+import manynames
+
+X = 66
+print(X)               # 66: the global here
+print(manynames.X)     # 11: globals become attributes after imports
+
+manynames.f()          # 11: manynames's X, not the one here!
+manynames.g()          # 22: local in other file's function
+
+print(manynames.C.X)   # 33: attribute of class in other module
+I = manynames.C()
+print(I.X)             # 33: still from class here
+I.m()
+print(I.X)             # 55: now from instance!
+```
+
+#### 命名空间字典
+
+对象命名空间实际上是以字典的形式实现的，并且可以由内置属性`__dict__`查看。属性点号运算其实内部就是字典的索引运算，而属性继承其实就是搜索链接的字典。
+
+首先我们定义一个超类和一个带方法的子类，而这些方法会将数据保存到实例中：
+
+```python
+>>> class Super:
+        def hello(self):
+            self.data1 = 'spam'
+>>> class Sub(Super):
+        def hola(self):
+            self.data2 = 'eggs'
+```
+
+实例中有个`__class__`属性链接到它的类；而类有个`__bases__`属性，它是一个元组，其中包含了通往更高的超类的链接。
+
+```python
+>>> X = Sub()
+>>> X.__dict__ # Instance namespace dict
+{}
+>>> X.__class__ # Class of instance
+<class '__main__.Sub'>
+>>> Sub.__bases__ # Superclasses of class
+(<class '__main__.Super'>,)
+>>> Super.__bases__ # () empty tuple in Python 2.X
+(<class 'object'>,)
+```
+
+因为属性实际上是Python的字典键，所以既可以通过属性点号运算，也可以通过命名空间字典键索引运算，来对属性进行读取和赋值：
+
+```python
+>>> X.data1, X.__dict__['data1']
+('spam', 'spam')
+>>> X.data3 = 'toast'
+>>> X.__dict__
+{'data2': 'eggs', 'data3': 'toast', 'data1': 'spam'}
+>>> X.__dict__['data3'] = 'ham'
+>>> X.data3
+'ham'
+```
+
+但属性点号运算会执行继承搜索，所以可以存取命名空间字典键索引运算无法读取的属性。
+
+最后，内置函数`dir`能用在任何带有属性的对象，`dir(object)`类似于`object.__dict__.keys()`调用：
+
+```python
+>>> X = Sub()
+>>> X.hello()
+>>> X.hola()
+>>> X.data3 = 'ham'
+>>> X.__dict__
+{'data1': 'spam', 'data2': 'eggs', 'data3': 'ham'}
+>>> dir(X)
+['__class__', '__delattr__', '__dict__', '__dir__', '__doc__', '__eq__', '__format__', '__ge__', '__getattribute__', '__gt__', '__hash__', '__init__', '__init_subclass__', '__le__', '__lt__', '__module__', '__ne__', '__new__', '__reduce__', '__reduce_ex__', '__repr__', '__setattr__', '__sizeof__', '__str__', '__subclasshook__', '__weakref__', 'data1', 'data2', 'data3', 'hello', 'hola']
+>>> dir(Sub)
+['__class__', '__delattr__', '__dict__', '__dir__', '__doc__', '__eq__', '__format__', '__ge__', '__getattribute__', '__gt__', '__hash__', '__init__', '__init_subclass__', '__le__', '__lt__', '__module__', '__ne__', '__new__', '__reduce__', '__reduce_ex__', '__repr__', '__setattr__', '__sizeof__', '__str__', '__subclasshook__', '__weakref__', 'hello', 'hola']
+>>> dir(Super)
+['__class__', '__delattr__', '__dict__', '__dir__', '__doc__', '__eq__', '__format__', '__ge__', '__getattribute__', '__gt__', '__hash__', '__init__', '__init_subclass__', '__le__', '__lt__', '__module__', '__ne__', '__new__', '__reduce__', '__reduce_ex__', '__repr__', '__setattr__', '__sizeof__', '__str__', '__subclasshook__', '__weakref__', 'hello']
+```
+
+
+#### 命名空间链接
+
+实例和类的特殊属性`__class__`和`__bases__`可以在程序代码内查看继承层级。例如，可以用来显示类树：
+
+```python
+#!python
+"""
+classtree.py: Climb inheritance trees using namespace links,
+displaying higher superclasses with indentation for height
+"""
+def classtree(cls, indent):
+    print('.' * indent + cls.__name__) # Print class name here
+    for supercls in cls.__bases__:     # 递归到所有超类
+        classtree(supercls, indent+3)  # May visit super > once
+
+def instancetree(inst):
+    print('Tree of %s' % inst)         # Show instance
+    classtree(inst.__class__, 3)       # Climb to its class
+
+def selftest():
+    class A: pass
+    class B(A): pass
+    class C(A): pass
+    class D(B,C): pass
+    class E: pass
+    class F(D,E): pass
+    instancetree(B())
+    instancetree(F())
+
+if __name__ == '__main__': 
+    selftest()
+```
+
+在Python 3.X中运行时，包含了隐式的`object`超类的树会自动被添加到独立的类顶端。因为在Python 3.X中，所有的类都是新式类。
+
+```python
+C:\code> c:\python33\python classtree.py
+Tree of <__main__.selftest.<locals>.B object at 0x00000000029216A0>
+...B
+......A
+.........object
+Tree of <__main__.selftest.<locals>.F object at 0x00000000029216A0>
+...F
+......D
+.........B
+............A
+...............object
+.........C
+............A
+...............object
+......E
+.........object
+```
+
+上例中，由点号所表示的缩进表示类树的高度。
 
 ### 29.5 回顾文档字符串
 
+***文档字符串*** 是出现在各种结构顶部的字符串常量，由Python在相应对象的`__doc__`属性自动保存。它适用于模块文件、函数定义，以及类和方法。
+
+如下的文件`docstr.py`展示了文档字符串可以在代码中出现的位置，其中所有文档字符串都可以是三重引号的块：
+
+```python
+"I am: docstr.__doc__"
+
+def func(args):
+    "I am: docstr.func.__doc__"
+    pass
+
+class spam:
+    "I am: spam.__doc__ or docstr.spam.__doc__ or self.__doc__"
+    def method(self):
+        "I am: spam.method.__doc__ or self.method.__doc__"
+        print(self.__doc__)
+        print(self.method.__doc__)
+```
+
+文档字符串可以在运行时保持，所以可以在运行时使用其`__doc__`属性来获取文档：
+```python
+>>> import docstr
+>>> docstr.__doc__
+'I am: docstr.__doc__'
+>>> docstr.func.__doc__
+'I am: docstr.func.__doc__'
+>>> docstr.spam.__doc__
+'I am: spam.__doc__ or docstr.spam.__doc__ or self.__doc__'
+>>> docstr.spam.method.__doc__
+'I am: spam.method.__doc__ or self.method.__doc__'
+>>> x = docstr.spam()
+>>> x.method()
+I am: spam.__doc__ or docstr.spam.__doc__ or self.__doc__
+I am: spam.method.__doc__ or self.method.__doc__
+```
+
+
+
 
 ### 29.6 类VS模块
+
+模块和类的区别：
+
+- 模块：
+  - 实现 数据和逻辑的包。
+  - 通过Python文件和其他语言的扩展来创建。
+  - 通过导入来使用。
+  - Python编程结构的顶层（top-level）形式。
+- 类：
+  -  实现新的全部特性（full-featured）的对象。
+  -  由`class`语句创建。
+  -  通过调用来使用。
+  -  总是位于一个模块中。
+  -  支持运算符重载、多实例生成和继承。
+
+
 
 
 
@@ -1566,6 +1835,54 @@ spam
 
 
 ## 第30章 运算符重载
+
+### 30.1 基础知识
+
+
+
+### 30.2 索引和分片：`__getitem__`和`__setitem__`
+
+
+
+### 30.3 索引迭代：`__getitem__`
+
+
+
+### 30.4 可迭代对象：`__iter__`和`__next__`
+
+
+
+### 30.5 成员关系 `__contains__`、`__iter__`和`__getitem__`
+
+
+
+### 30.6 属性访问：`__getattr__`和`__setattr__`
+
+
+
+### 30.7 字符串重表示：`__repr__`和`__str__`
+
+
+
+### 30.8 右侧加法和原处加法的使用：`__radd__`和`__iadd__`
+
+
+
+### 30.9 Call表达式：`__call__`
+
+
+
+### 30.10 比较：`__lt__`、`__gt__`和其他方法
+
+
+
+### 30.11 布尔测试：`__bool__`和`__len__`
+
+
+
+### 30.12 对象析构函数：`__del__`
+
+
 
 
 
