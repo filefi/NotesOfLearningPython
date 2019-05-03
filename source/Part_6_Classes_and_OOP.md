@@ -1908,13 +1908,186 @@ class Number:
 
 ### 30.2 索引和分片：`__getitem__`和`__setitem__`
 
+对于实例的索引运算，如果在类中定义了或继承了`__getitem__`，则会自动调用`__getitem__`。当实例`X`出现在`X[i]`这样的索引运算中时，Python会调用这个实例的`__getitem__`方法（如果有的话），把`X`作为第一个参数传递，并且方括号内的索引值传递给第二个参数。例如，下面类将返回索引值的平方：
+
+```python
+>>> class Indexer:
+        def __getitem__(self, index):
+            return index ** 2
+>>> X = Indexer()
+>>> X[2]                  # X[i] calls X.__getitem__(i)
+4
+>>> for i in range(5):
+print(X[i], end=' ')      # Runs __getitem__(X, i) each time
+0 1 4 9 16
+```
+
+#### 拦截分片
+
+除了索引，对于分片表达式也会调用`__getitem__`。例如，对内置列表的分片：
+
+```python
+>>> L = [5, 6, 7, 8, 9]
+>>> L[2:4] # Slice with slice syntax: 2..(4-1)
+[7, 8]
+>>> L[1:]
+[6, 7, 8, 9]
+>>> L[:-1]
+[5, 6, 7, 8]
+>>> L[::2]
+[5, 7, 9]
+```
+
+实际上，我们可以手动传递一个`slice`对象来进行分片。`slice`对象有3个属性：`start`,`stop`,`step`；其中任何一个都可以为`None`，如果为`None`则会被忽略。
+
+```python
+>>> L[slice(2, 4)] # Slice with slice objects
+[7, 8]
+>>> L[slice(1, None)]
+[6, 7, 8, 9]
+>>> L[slice(None, −1)]
+[5, 6, 7, 8]
+>>> L[slice(None, None, 2)]
+[5, 7, 9]
+```
+
+对于具有`__getitem__`的类，`__getitem__`方法既针对基本索引调用，又针对分片（带有一个分片对象）调用。
+
+如下类`Indexer`将会处理分片：
+
+```python
+>>> class Indexer:
+        data = [5, 6, 7, 8, 9]
+        def __getitem__(self, index): # Called for index or slice
+            print('getitem:', index)
+            return self.data[index] # Perform index or slice
+```
+
+当针对索引调用时，参数像前面一样是一个整数：
+```python
+>>> X = Indexer()
+>>> X[0] # Indexing sends __getitem__ an integer
+getitem: 0
+5
+>>> X[1]
+getitem: 1
+6
+>>> X[-1]
+getitem: −1
+9
+```
+
+当针对分片调用时，方法接收一个分片对象：
+```python
+>>> X[2:4] # Slicing sends __getitem__ a slice object
+getitem: slice(2, 4, None)
+[7, 8]
+>>> X[1:]
+getitem: slice(1, None, None)
+[6, 7, 8, 9]
+>>> X[:-1]
+getitem: slice(None, −1, None)
+[5, 6, 7, 8]
+>>> X[::2]
+getitem: slice(None, None, 2)
+[5, 7, 9]
+```
+
+如果需要，`__getitem__`可以测试它参数的类型，并取出`slice`对象边界。
+```python
+>>> class Indexer:
+        def __getitem__(self, index):
+            if isinstance(index, int): # Test usage mode
+                print('indexing', index)
+            else:
+                print('slicing', index.start, index.stop, index.step)
+>>> X = Indexer()
+>>> X[99]
+indexing 99
+>>> X[1:99:2]
+slicing 1 99 2
+>>> X[1:]
+slicing 1 None None
+```
+
+与`__getitem__`类似，`__setitem__`方法拦截索引和分片赋值。在Python 3.X中，它为后者接收一个`slice`对象，这个`slice`对象可能被传递到另一个索引赋值中，或者也可能以同样的方式直接被使用：
+```python
+class IndexSetter:
+    def __setitem__(self, index, value): # Intercept index or slice assignment
+        ...
+        self.data[index] = value # Assign index or slice
+```
+
+#### Python 3.X的`__index__`不是索引
+Python 3.X的`__index__`不是为了索引拦截（index interception）。当需要时，或者实例被转换数字字符串的内置函数（built-ins）使用时，这个方法返回一个整数值。其实，这个方法如果被命名为`__asindex__`，可能会更贴切一些。
+
+```python
+>>> class C:
+        def __index__(self):
+            return 255
+>>> X = C()
+>>> hex(X) # Integer value
+'0xff'
+>>> bin(X)
+'0b11111111'
+>>> oct(X)
+'0o377'
+```
 
 
 ### 30.3 索引迭代：`__getitem__`
 
+for语句的作用是从0到更大的索引值，重复对序列进行索引运算，直到检测到越界的异常`IndexError`。因此，`__getitem__`也可以作为Python中的一种重载迭代的方式。
+
+如果`__getitem__`被定义，for循环每趟循环都会连续地以更高的偏移量（offsets）来调用类的`__getitem__`：
+
+```python
+>>> class StepperIndex:
+        def __getitem__(self, i):
+            return self.data[i]
+>>> X = StepperIndex() # X is a StepperIndex object
+>>> X.data = "Spam"
+>>>
+>>> X[1] # Indexing calls __getitem__
+'p'
+>>> for item in X: # for loops call __getitem__
+        print(item, end=' ') # for indexes items 0..N
+S p a m
+```
+
+Python中所有的迭代环境（iteration contexts），例如，成员关系检测`in`，列表解析，内置函数`map`、列表和元组赋值运算以及类型构造方法也会自动调用`__getitem__`（如果定义了的话）：
+
+```python
+>>> 'p' in X # All call __getitem__ too
+True
+>>> [c for c in X] # List comprehension
+['S', 'p', 'a', 'm']
+>>> list(map(str.upper, X)) # map calls (use list() in 3.X)
+['S', 'P', 'A', 'M']
+>>> (a, b, c, d) = X # Sequence assignments
+>>> a, c, d
+('S', 'a', 'm')
+>>> list(X), tuple(X), ''.join(X) # And so on...
+(['S', 'p', 'a', 'm'], ('S', 'p', 'a', 'm'), 'Spam')
+>>> X
+<__main__.StepperIndex object at 0x000000000297B630>
+```
+
 
 
 ### 30.4 可迭代对象：`__iter__`和`__next__`
+
+
+
+#### 用户自定义迭代器
+
+
+
+#### 多迭代器的对象
+
+
+
+#### Coding Alternative：`__iter__` plus `yield`
 
 
 
