@@ -2037,7 +2037,7 @@ Python 3.X的`__index__`不是为了索引拦截（index interception）。当�
 
 ### 30.3 索引迭代：`__getitem__`
 
-for语句的作用是从0到更大的索引值，重复对序列进行索引运算，直到检测到越界的异常`IndexError`。因此，`__getitem__`也可以作为Python中的一种重载迭代的方式。
+for语句的作用是从0到更大的索引值，重复对序列进行索引运算，直到检测到越界的异常`IndexError`。因此，`__getitem__`也可以作为Python中的一种*退而求其次的（fallback）*重载迭代方式。
 
 如果`__getitem__`被定义，for循环每趟循环都会连续地以更高的偏移量（offsets）来调用类的`__getitem__`：
 
@@ -2077,13 +2077,176 @@ True
 
 ### 30.4 可迭代对象：`__iter__`和`__next__`
 
+Python中所有的迭代环境（iteration contexts）都会先尝试`__iter__`方法，仅当没有找到`__iter__`方法时，才退而尝试`__getitem__`方法，并反复地通过偏移量（offsets）来索引，直到`IndexError`异常被触发。也就是说，可迭代对象接口被给予优先级并会首先被尝试，只有在对象不支持迭代协议的时候，才会尝试索引运算。一般来讲，我们应该优先使用`__iter__`，它能够比`__getitem__`更好地支持一般的迭代环境。
 
+从技术角度来讲，迭代环境的工作机制是通过将一个可迭代对象作为参数传递给内置函数`iter`来调用可迭代对象的`__iter__`方法，这个`__iter__`方法应该返回一个**迭代器对象**。如果成功返回了迭代器对象，Python就会重复调用这个迭代器对象的`__next__`方法，直到`StopIteration`异常被引发。内置函数`next`也可用来作为手动迭代的一种便捷方式，即，`next(I)`和`I.__next__()`相同。
 
 #### 用户自定义迭代器
 
+在`__iter__`机制中，类就是通过迭代器协议来实现用户定义的迭代器的。
 
+例如，下面的文件`iters.py`定义了用户定义的迭代器类来生成平方值：
+
+```python
+# File squares.py
+class Squares:
+    def __init__(self, start, stop): # Save state when created
+        self.value = start - 1
+        self.stop = stop
+    def __iter__(self):             # Get iterator object on iter
+        return self
+    def __next__(self):             # Return a square on each iteration
+        if self.value == self.stop: # Also called by next built-in
+            raise StopIteration     # 引发StopIteration异常
+        self.value += 1
+        return self.value ** 2
+```
+
+其中，迭代器对象就是实例`self`自身，因为类实现了`__next__`方法。
+
+当导入后，它的实例出现在迭代器环境（iteration contexts）中就会像内建的（built-ins）一样：
+
+```python
+% python
+>>> from squares import Squares
+>>> for i in Squares(1, 5):        # for calls iter, which calls __iter__
+        print(i, end=' ')          # Each iteration calls __next__
+1 4 9 16 25
+```
+
+手动迭代`Squares`类实例：
+
+```python
+>>> X = Squares(1, 5)  # Iterate manually: what loops do
+>>> I = iter(X)        # iter calls __iter__
+>>> next(I)            # next calls __next__ (in 3.X)
+1
+>>> next(I)
+4
+...more omitted...
+>>> next(I)
+25
+>>> next(I)            # Can catch this in try statement
+StopIteration
+```
+
+同时，因为`Squares`类既实现了`__iter__`也实现了`__next__`，所以，它的实例的迭代器就是其自身，可以直接迭代其自身：
+
+```python
+>>> X = Squares(1,5)
+>>> I = iter(X)
+>>> X is I
+True
+>>> id(X)
+140309082954832
+>>> id(I)
+140309082954832
+>>> next(X)
+1
+>>> next(X)
+4
+>>> next(X)
+9
+>>> next(X)
+16
+>>> next(X)
+25
+>>> next(X)
+Traceback (most recent call last):
+  File "<stdin>", line 1, in <module>
+  File "<stdin>", line 9, in __next__
+StopIteration
+```
+
+因为`__iter__`会在调用过程中明确地保留迭代状态信息，所以比`__getitem__`简单地通过索引偏移量实现迭代具有更好的通用性。
+
+##### Single versus multiple scans
+和`__getitem__`不同的是，`__iter__`只循环一次，而不是循环多次。所以每次开始新的迭代，都得创建一个新的迭代器对象。例如，`Square`类只循环一次，循环之后就变为空：
+
+```python
+>>> X = Squares(1, 5)          # Make an iterable with state
+>>> [n for n in X]             # Exhausts items: __iter__ returns self
+[1, 4, 9, 16, 25]
+>>> [n for n in X]             # Now it's empty: __iter__ returns same self
+[]
+>>> [n for n in Squares(1, 5)] # Make a new iterable object
+[1, 4, 9, 16, 25]
+>>> list(Squares(1, 3))        # A new object for each new __iter__ call
+[1, 4, 9]
+```
+
+```python
+>>> 36 in Squares(1, 10) # Other iteration contexts
+True
+>>> a, b, c = Squares(1, 3) # Each calls __iter__ and then __next__
+>>> a, b, c
+(1, 4, 9)
+>>> ':'.join(map(str, Squares(1, 5)))
+'1:4:9:16:25'
+```
+
+```python
+>>> X = Squares(1, 5)
+>>> tuple(X), tuple(X) # Iterator exhausted in second tuple()
+((1, 4, 9, 16, 25), ())
+>>> X = list(Squares(1, 5))
+>>> tuple(X), tuple(X)
+((1, 4, 9, 16, 25), (1, 4, 9, 16, 25))
+```
+
+##### Classes versus generators
+
+如果用生成器函数编写这个例子，可能会更简单一些。和类不同的是，生成器函数会自动在迭代中存储其状态。
+
+```python
+>>> def gsquares(start, stop):
+        for i in range(start, stop + 1):
+            yield i ** 2
+>>> for i in gsquares(1, 5):
+        print(i, end=' ')
+1 4 9 16 25
+>>> for i in (x ** 2 for x in range(1, 6)):
+        print(i, end=' ')
+1 4 9 16 25
+```
 
 #### 多迭代器的对象
+
+迭代器对象可以定义成一个独立的类，有其自己的状态信息，从而能够支持相同数据的多个迭代。要达到多个迭代器的效果，`__iter__`只需为迭代器定义新的状态对象，而不是为每个迭代器请求返回`self`。
+
+例如，下面的`SkipObject`类定义了一个在迭代时跳过每一项元素的可迭代对象。因为迭代器对象会在每次迭代时都重新创建，所以能够支持多个处于激活状态下的循环。
+
+```python
+#!python3
+# File skipper.py
+class SkipObject:
+    def __init__(self, wrapped):             # Save item to be used
+        self.wrapped = wrapped
+    def __iter__(self):
+        return SkipIterator(self.wrapped)    # New iterator each time
+
+class SkipIterator:
+    def __init__(self, wrapped):
+        self.wrapped = wrapped               # Iterator state information
+        self.offset = 0
+    def __next__(self):
+        if self.offset >= len(self.wrapped): # Terminate iterations
+            raise StopIteration
+        else:
+            item = self.wrapped[self.offset] # else return and skip
+            self.offset += 2
+            return item
+
+if __name__ == '__main__':
+    alpha = 'abcdef'
+    skipper = SkipObject(alpha)      # Make container object
+    I = iter(skipper)                # Make an iterator on it
+    print(next(I), next(I), next(I)) # Visit offsets 0, 2, 4
+    
+    for x in skipper:                # for calls __iter__ automatically
+        for y in skipper:                # Nested fors call __iter__ again each time
+            print(x + y, end=' ')            # Each iterator has its own state, offset
+```
 
 
 
