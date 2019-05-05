@@ -2175,19 +2175,21 @@ StopIteration
 [1, 4, 9]
 ```
 
+通过为每次迭代创建一个新实例，您将获得迭代状态的新副本：
 ```python
->>> 36 in Squares(1, 10) # Other iteration contexts
+>>> 36 in Squares(1, 10)      # Other iteration contexts
 True
->>> a, b, c = Squares(1, 3) # Each calls __iter__ and then __next__
+>>> a, b, c = Squares(1, 3)   # Each calls __iter__ and then __next__
 >>> a, b, c
 (1, 4, 9)
 >>> ':'.join(map(str, Squares(1, 5)))
 '1:4:9:16:25'
 ```
 
+就像单扫描（single-scan）内置函数（如`map`），转换为列表也支持多次扫描（multiple scans），但会增加时间和空间性能成本：
 ```python
 >>> X = Squares(1, 5)
->>> tuple(X), tuple(X) # Iterator exhausted in second tuple()
+>>> tuple(X), tuple(X)         # Iterator exhausted in second tuple()
 ((1, 4, 9, 16, 25), ())
 >>> X = list(Squares(1, 5))
 >>> tuple(X), tuple(X)
@@ -2196,8 +2198,9 @@ True
 
 ##### Classes versus generators
 
-如果用生成器函数编写这个例子，可能会更简单一些。和类不同的是，生成器函数会自动在迭代中存储其状态。
+如果用生成器函数或生成器表达式编写这个例子，可能会更简单一些。和类不同的是，生成器函数会自动在迭代中存储其状态。
 
+生成器函数实现：
 ```python
 >>> def gsquares(start, stop):
         for i in range(start, stop + 1):
@@ -2205,6 +2208,10 @@ True
 >>> for i in gsquares(1, 5):
         print(i, end=' ')
 1 4 9 16 25
+```
+
+生成器表达式实现：
+```python
 >>> for i in (x ** 2 for x in range(1, 6)):
         print(i, end=' ')
 1 4 9 16 25
@@ -2248,9 +2255,57 @@ if __name__ == '__main__':
             print(x + y, end=' ')            # Each iterator has its own state, offset
 ```
 
+运行时，这个例子工作起来就像是对内置字符串进行嵌套循环一样，因为每个循环都会获得独立的迭代器对象来记录自己的状态信息，所以每个激活状态下的循环都有自己在字符串中的位置：
+
+```python
+% python skipper.py
+a c e
+aa ac ae ca cc ce ea ec ee
+```
+
+##### Classes versus slices
+
+我可以使用内置工具来达到类似的效果。例如，用第三参数边界值进行分片运算来跳过元素：
+
+```python
+>>> S = 'abcdef'
+>>> for x in S[::2]:             # 每个分片表达式偶会一次性把结果列表存储到内存中
+        for y in S[::2]:         # New objects on each iteration
+            print(x + y, end=' ')
+aa ac ae ca cc ce ea ec ee
+```
+
+但上例中这样做会使每个分片表达式偶会一次性把结果列表存储到内存中，而不是像迭代器那样一次产生一个值，所以会比迭代器消耗更多的内存。为了接近于使用迭代器的效果，我们需要事先创建一个已分片的对象来步进：
+
+```python
+>>> S = 'abcdef'
+>>> S = S[::2]
+>>> S
+'ace'
+>>> for x in S:
+        for y in S: # Same object, new iterators
+            print(x + y, end=' ')
+aa ac ae ca cc ce ea ec ee
+```
+
 
 
 #### Coding Alternative：`__iter__` plus `yield`
+
+第五版，暂略
+
+```python
+>>> def gen(x):
+        for i in range(x): yield i ** 2
+>>> G = gen(5)             # Create a generator with __iter__ and __next__
+>>> G.__iter__() == G      # Both methods exist on the same object
+True
+>>> I = iter(G)            # Runs __iter__: generator returns itself
+>>> next(I), next(I)       # Runs __next__ (next in 2.X)
+(0, 1)
+>>> list(gen(5))           # Iteration contexts automatically run iter and next
+[0, 1, 4, 9, 16]
+```
 
 
 
