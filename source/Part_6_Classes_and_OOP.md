@@ -2292,7 +2292,9 @@ aa ac ae ca cc ce ea ec ee
 
 #### Coding Alternative：`__iter__` plus `yield`
 
-第五版，暂略
+在某些应用中，通过将`__iter__`方法和`yield`生成器函数语句相结合，可以最小化用户定义的可迭代对象的编码要求。因为生成器函数自动地保存本地变量的状态，并创建所需的迭代器方法。这补足（complement）了我们从**类**所获得的状态保持（state retention）和其他实用性（utility）。
+
+包含`yield`语句的任何函数都将被转换为生成器函数。当被调用时，它将返回一个新的生成器对象。这个返回的生成器对象具有本地作用域和代码位置的自动状态保持（retention），以及一个自动被创建的`__iter__`方法和`__next__`方法（在Python 2.X中则是`next`）。其中，`__iter__`方法简单地返回生成器对象其自身；而`__next__`方法则启动该生成器函数，或者从停止的位置恢复它。
 
 ```python
 >>> def gen(x):
@@ -2307,9 +2309,262 @@ True
 [0, 1, 4, 9, 16]
 ```
 
+即使带有`yield`的生成器函数恰好也名为`__iter__`，这也依然可行。任何时候，只要被一个迭代环境工具调用，这样的方法就将返回一个带有`__next__`方法的新生成器对象。这也使得作为方法而被编码在类中的生成器函数可以访问保存在实例属性和本地作用域变量中的状态。
+
+例如，下面的类等价于之前`squares.py`可迭代对象`Squares`：
+
+```python
+# File squares_yield.py
+class Squares:                       # __iter__ + yield generator
+    def __init__(self, start, stop): # __next__ is automatic/implied
+        self.start = start
+        self.stop = stop
+    def __iter__(self):
+        for value in range(self.start, self.stop + 1):
+            yield value ** 2
+```
+
+就像之前一样，`for`循环和其他迭代工具可以自动迭代这个类的实例：
+
+```python
+% python
+>>> from squares_yield import Squares
+>>> for i in Squares(1, 5): print(i, end=' ')
+1 4 9 16 25
+```
+
+调用结果对象的`next`接口生成按需的结果：
+
+```python
+>>> S = Squares(1, 5)     # Runs __init__: class saves instance state
+>>> S
+<squares_yield.Squares object at 0x000000000294B630>
+>>> I = iter(S)           # Runs __iter__: returns a generator
+>>> I
+<generator object __iter__ at 0x00000000029A8CF0>
+>>> next(I)
+1
+>>> next(I)               # Runs generator's __next__
+4
+...etc...
+>>> next(I)               # Generator has both instance and local scope state
+StopIteration
+```
+
+我们可以将这个生成器方法命名为其他名字而不是`__iter__`，以此来手动迭代，例如`Squares(1,5).gen`。使用被迭代工具自动调用的方法名`__iter__`将直接跳过手动属性获取和调用步骤：
+
+```python
+class Squares:            # Non __iter__ equivalent (squares_manual.py)
+    def __init__(...):
+        ...
+    def gen(self):
+        for value in range(self.start, self.stop + 1):
+            yield value ** 2
+% python
+>>> from squares_manual import Squares
+>>> for i in Squares(1, 5).gen(): print(i, end=' ')
+...same results...
+>>> S = Squares(1, 5)
+>>> I = iter(S.gen())    # Call generator manually for iterable/iterator
+>>> next(I)
+...same results...
+```
+
+但是，将生成器编码为`__iter__`会切断代码中的中间人。两种方案最终都会为每次迭代创建一个新的生成器对象：
+
+- 有`__iter__`，则迭代触发`__iter__`，这将返回一个具有`__next__`的新生成器。
+- 没有`__iter__`，则你的代码被调用，以创建一个生成器，这将返回生成器本身以获得其`__iter__`方法。
+
+对比之前`squares.py`中的带有`__next__`的版本，你就会发现，新的`squares_yield.py`版本比之前少了4行。在某种意义上，这种方案减少了类编码要求，很像是第17章中的闭包函数（closure functions）。但是在这个例子中，也使用了函数式和OOP技术的组合，而不是类的替代方案。例如，生成器方法仍然利用`self`属性。
+
+##### Multiple iterators with yield
+
+除了代码简洁以外，前一部分基于`__iter__`和`yield`组合的用户自定义可迭代对象还有一个重要的好处：它也支持多个激活的迭代器（multiple active iterators）。
+
+这自然是因为每次调用`__iter__`都是对生成器函数的调用，该函数返回一个新生成器，该生成器具有自己的本地作用域副本以保持状态：
+
+```python
+% python
+>>> from squares_yield import Squares # Using the __iter__/yield Squares
+>>> S = Squares(1, 5)
+>>> I = iter(S)
+>>> next(I); next(I)
+1
+4
+>>> J = iter(S)                       # With yield, multiple iterators automatic
+>>> next(J)
+1
+>>> next(I)                           # I is independent of J: own local state
+9
+```
+
+即使生成器函数是单扫描（single-scan）可迭代对象，在迭代环境中对`__iter__`的隐式调用也会使新的生成器支持新的独立扫描：
+
+```python
+>>> S = Squares(1, 3)
+>>> for i in S: # Each for calls __iter__
+>>> for j in S:
+>>> print('%s:%s' % (i, j), end=' ')
+>>> 1:1 1:4 1:9 4:1 4:4 4:9 9:1 9:4 9:9
+```
+
+在不使用`yield`的情况下要做同样的事需要一个额外的类来显式地和手动地存储迭代器状态：
+```python
+# File squares_nonyield.py
+class Squares:
+    def __init__(self, start, stop): # Non-yield generator
+        self.start = start           # Multiscans: extra object
+        self.stop = stop
+    def __iter__(self):
+        return SquaresIter(self.start, self.stop)
+
+class SquaresIter:
+    def __init__(self, start, stop):
+        self.value = start - 1
+        self.stop = stop
+    def __next__(self):
+        if self.value == self.stop:
+            raise StopIteration
+        self.value += 1
+        return self.value ** 2
+```
+
+这和使用`yield`的多扫描（mlti-scan）版本一样奏效，但多了很多显式的代码：
+```python
+% python
+>>> from squares_nonyield import Squares
+>>> for i in Squares(1, 5): print(i, end=' ')
+1 4 9 16 25
+>>>
+>>> S = Squares(1, 5)
+>>> I = iter(S)
+>>> next(I); next(I)
+1
+4
+>>> J = iter(S)            # Multiple iterators without yield
+>>> next(J)
+1
+>>> next(I)
+9
+>>> S = Squares(1, 3)
+>>> for i in S:           # Each for calls __iter___
+        for j in S:
+            print('%s:%s' % (i, j), end=' ')
+1:1 1:4 1:9 4:1 4:4 4:9 9:1 9:4 9:9
+```
+
+最后，基于生成器（generator-based）的方法同样会移除之前`skipper.py`例子中额外的迭代器类。因为生成器的自动方法和本地变量状态保持，使得代码从原来的16行缩短到了9行：
+```python
+# File skipper_yield.py
+class SkipObject:                  # Another __iter__ + yield generator
+    def __init__(self, wrapped):   # Instance scope retained normally
+        self.wrapped = wrapped     # Local scope state saved auto
+    def __iter__(self):
+        offset = 0
+        while offset < len(self.wrapped):
+            item = self.wrapped[offset]
+            offset += 2
+            yield item
+```
+
+这和非`yield`多扫描（multiscan）版本一样地奏效，但是少了很多显式代码：
+```python
+% python
+>>> from skipper_yield import SkipObject
+>>> skipper = SkipObject('abcdef')
+>>> I = iter(skipper)
+>>> next(I); next(I); next(I)
+'a'
+'c'
+'e'
+>>> for x in skipper: # Each for calls __iter__: new auto generator
+        for y in skipper:
+            print(x + y, end=' ')
+aa ac ae ca cc ce ea ec ee
+```
 
 
 ### 30.5 成员关系 `__contains__`、`__iter__`和`__getitem__`
+
+运算符重载往往是多个层级的：类可以提供特定的方法，或者用作退而求其次的选项的更通用的替代方案：
+
+- Python 2.X中使用`__lt__`这样的特殊方法来表示少于比较，或者使用通用的`__cmp__`。Python 3.X只使用特殊的方法，而不是`__cmp__`。
+- 类似地，布尔测试先尝试一个特定的`__bool__`（以给出一个明确的True/False结果），并且，如果没有它，将会退而求其次到更通用的`__len__`（一个非零的长度意味着True）。
+
+在迭代领域，类通常把`in`成员关系运算符实现为一个迭代，使用`__iter__`方法或`__getitem__`方法。要支持更加特定的成员关系，类可以编写一个`__contains__`方法。当它们都出现的时候，`__contains__`优先于`__iter__`，`__iter__`优先于`__getitem__`。
+
+如下的类编写了3个方法和测试成员关系以及应用于一个实例的各种迭代环境。调用时，其方法会打印出跟踪消息：
+
+```python
+# File contains.py
+from __future__ import print_function # 2.X/3.X compatibility
+
+class Iters:
+    def __init__(self, value):
+        self.data = value
+        
+    def __getitem__(self, i):         # Fallback for iteration
+        print('get[%s]:' % i, end='') # Also for index, slice
+        return self.data[i]
+    
+    def __iter__(self):               # Preferred for iteration
+        print('iter=> ', end='')      # Allows only one active iterator
+        self.ix = 0
+        return self
+    
+    def __next__(self):
+        print('next:', end='')
+        if self.ix == len(self.data): raise StopIteration
+        item = self.data[self.ix]
+        self.ix += 1
+        return item
+    
+    def __contains__(self, x):        # Preferred for 'in'
+        print('contains: ', end='')
+        return x in self.data
+    
+    next = __next__                   # 2.X/3.X compatibility
+
+if __name__ == '__main__':
+    X = Iters([1, 2, 3, 4, 5])     # Make instance
+    print(3 in X)                  # Membership
+    for i in X:                    # for loops
+        print(i, end=' | ')
+        
+    print()
+    print([i ** 2 for i in X])     # Other iteration contexts
+    print( list(map(bin, X)) )
+    
+    I = iter(X)                    # Manual iteration (what other contexts do)
+    while True:
+        try:
+            print(next(I), end=' @ ')
+        except StopIteration:
+            break
+```
+
+上例中，类有一个支持多扫描的`__iter__`方法，但在任意时间点，只能有一个激活的扫描。因为每次迭代尝试都会重置扫描指针。下面是在迭代方法中使用`yield`实现的支持多扫描的，并具有更少代码量的类`Iters`：
+
+```python
+# contains_yield.py
+class Iters:
+    def __init__(self, value):
+        self.data = value
+        
+    def __getitem__(self, i):          # Fallback for iteration
+        print('get[%s]:' % i, end='')  # Also for index, slice
+        return self.data[i]
+    
+    def __iter__(self):                # Preferred for iteration
+        print('iter=> next:', end='')  # Allows multiple active iterators
+        for x in self.data:            # no __next__ to alias to next
+            yield x
+            print('next:', end='')
+            
+    def __contains__(self, x):         # Preferred for 'in'
+        print('contains: ', end='')
+        return x in self.data
+```
 
 
 
