@@ -2486,10 +2486,10 @@ aa ac ae ca cc ce ea ec ee
 
 ### 30.5 成员关系 `__contains__`、`__iter__`和`__getitem__`
 
-运算符重载往往是多个层级的：类可以提供特定的方法，或者用作退而求其次的选项的更通用的替代方案：
+运算符重载往往是**多个层级**的：类可以提供特定的方法，或者用作退而求其次的选项的更通用的替代方案：
 
 - Python 2.X中使用`__lt__`这样的特殊方法来表示少于比较，或者使用通用的`__cmp__`。Python 3.X只使用特殊的方法，而不是`__cmp__`。
-- 类似地，布尔测试先尝试一个特定的`__bool__`（以给出一个明确的True/False结果），并且，如果没有它，将会退而求其次到更通用的`__len__`（一个非零的长度意味着True）。
+- 类似地，布尔测试先尝试一个特定的`__bool__`（以给出一个明确的`True`/`False`结果），并且，如果没有它，将会退而求其次到更通用的`__len__`（一个非零的长度意味着`True`）。
 
 在迭代领域，类通常把`in`成员关系运算符实现为一个迭代，使用`__iter__`方法或`__getitem__`方法。要支持更加特定的成员关系，类可以编写一个`__contains__`方法。当它们都出现的时候，`__contains__`优先于`__iter__`，`__iter__`优先于`__getitem__`。
 
@@ -2566,9 +2566,145 @@ class Iters:
         return x in self.data
 ```
 
+对于Python 3.X和2.X，当以上任一版本的文件运行时，特定的`__contains__`方法拦截成员关系；通用的`__iter__`捕获其他迭代环境以至`__next__`被重复地调用（不管是显式编码的还是通过`yield`隐式编码的）；而`__getitem__`不会被调用。其输出如下所示：
+
+```python
+contains: True          # 成员关系in运算会优先调用__contains__
+iter=> next:1 | next:2 | next:3 | next:4 | next:5 | next:
+iter=> next:next:next:next:next:next:[1, 4, 9, 16, 25]
+iter=> next:next:next:next:next:next:['0b1', '0b10', '0b11', '0b100', '0b101']
+iter=> next:1 @ next:2 @ next:3 @ next:4 @ next:5 @ next:
+```
+
+如果我们将`__contains__`方法注释掉，成员关系现在被路由到了通用的`__iter__`：
+
+```python
+iter=> next:next:next:True     # 退而求其次，成员关系被__iter__拦截,并开始迭代元素，以检测成员关系
+iter=> next:1 | next:2 | next:3 | next:4 | next:5 | next:
+iter=> next:next:next:next:next:next:[1, 4, 9, 16, 25]
+iter=> next:next:next:next:next:next:['0b1', '0b10', '0b11', '0b100', '0b101']
+iter=> next:1 @ next:2 @ next:3 @ next:4 @ next:5 @ next:
+```
+
+最后，如果`__contains__`和`__iter__`都注释掉，则索引`__getitem__`替代方法会被调用，其输出如下：
+
+```python
+get[0]:get[1]:get[2]:True   # 退而求其次，成员关系被__getitem__拦截，并开始索引遍历元素，以检测成员关系
+get[0]:1 | get[1]:2 | get[2]:3 | get[3]:4 | get[4]:5 | get[5]:
+get[0]:get[1]:get[2]:get[3]:get[4]:get[5]:[1, 4, 9, 16, 25]
+get[0]:get[1]:get[2]:get[3]:get[4]:get[5]:['0b1', '0b10', '0b11', '0b100','0b101']
+get[0]:1 @ get[1]:2 @ get[2]:3 @ get[3]:4 @ get[4]:5 @ get[5]:
+```
+
+正如我们所看到的，`__getitem__`方法更加通用，除了迭代，它还拦截显示索引和分片：
+
+```python
+>>> from contains import Iters
+>>> X = Iters('spam')              # Indexing
+>>> X[0]                           # __getitem__(0)
+get[0]:'s'
+>>> 'spam'[1:]                     # Slice syntax
+'pam'
+>>> 'spam'[slice(1, None)]         # Slice object
+'pam'
+>>> X[1:]                          # __getitem__(slice(..))
+get[slice(1, None, None)]:'pam'
+>>> X[:-1]
+get[slice(None, −1, None)]:'spa'
+>>> list(X)                        # And iteration too!
+iter=> next:next:next:next:next:['s', 'p', 'a', 'm']
+```
+
 
 
 ### 30.6 属性访问：`__getattr__`和`__setattr__`
+在Python中，类也可以拦截（intercept）基本属性访问。对于一个由类创建的对象，点号运算符表达式`object.attribute`也可以由代码实现，用于引用、赋值和删除上下文（contexts）。
+
+#### 属性引用
+
+`__getattr__`方法会拦截属性引用。
+
+当我们对属性名称和实例进行点号运算时，如果Python无法通过继承树搜索流程找到这个属性，则`__getattr__`方法会作为钩子被调用，以拦截和响应属性点号运算。
+
+`__getattr__`的第一个参数为`self`，第二个参数为属性名称的字符串；而该方法的返回值将被作为属性的值。
+
+例子如下：
+
+```python
+>>> class Empty:
+        def __getattr__(self, attrname): # 当访问属性，而属性又未定义时，会被__getattr__拦截
+            if attrname == 'age':
+                return 40     # 当符合条件时，此方法返回一个值40作为X.age点号表达式的结果
+            else:
+                raise AttributeError(attrname)
+>>> X = Empty()
+>>> X.age     # 由于对象X本身没有属性，所以对X.age的访问会转至__getattr__方法
+40
+>>> X.name
+...error text omitted...
+AttributeError: name
+```
+由于对象X没有属性，所以对属性的访问会转至`__getattr__`方法，而当属性名称符合条件时（即，属性名称的字符串为`age`），该方法返回整数值40；而当属性名称不符合条件时，则引发内置的`AttributeError`异常。这让属性`age`看起来想实际存在的属性。实际上，这样我们可以用此方法实现**动态计算**的属性。
+
+#### 属性的赋值
+
+`__setattr__`方法会拦截所有属性赋值，并允许你对其进行验证（validate）或转变（transform）。如果定义了这个方法，`self.attr = value`会变成`self.__setattr__('attr', value)`。
+
+这个方法使用起来比较tricky，因为对任何`self`的属性进行赋值都会调用`__setattr__`方法。这可能会造成`__setattr__`被重复调用，导致无穷递归循环（堆栈溢出异常）。
+
+要使用这个方法，可以通过将实例属性赋值编码为属性字典键的赋值，来避免循环。也就说，使用`self.__dict__['name'] = x`，而不是`self.name = x`。因为你不是赋值给`__dict__`本身，这避免了循环的发生。
+
+```python
+>>> class Accesscontrol:
+        def __setattr__(self, attr, value):
+            if attr == 'age':
+                self.__dict__[attr] = value + 10             # Not self.name=val or setattr()
+            else:
+                raise AttributeError(attr + ' not allowed')
+>>> X = Accesscontrol()
+>>> X.age = 40                               # Calls __setattr__
+>>> X.age
+50
+>>> X.name = 'Bob'
+...text omitted...
+AttributeError: name not allowed
+```
+
+如果你将上面代码中的`__dict__`赋值改变为以下任一一种赋值方式，都会触发无限递归循环和异常。当`age`在类的外部被赋值时，不管是使用点号运算符还是使用内置函数`setattr`，都会失败。
+
+```python
+self.age = value + 10              # Loops
+setattr(self, attr, value + 10)    # Loops (attr is 'age')
+```
+
+
+在类内部对另一个变量名进行赋值也会触发递归的`__setattr__`调用，尽管在类中以手动`AttributeError`异常而终止的情况较少：
+```python
+self.other = 99       # Recurs but doesn't loop: fails
+```
+
+
+通过一个调用将任何属性赋值都转至更高层级的超类，而不是对`__dict__`的键进行赋值，也可以避免递归循环：
+```python
+self.__dict__[attr] = value + 10 # OK: doesn't loop
+object.__setattr__(self, attr, value + 10) # OK: doesn't loop (new-style only)
+```
+
+#### 属性的删除
+
+第3个属性管理方法是`__delattr__`，它传递属性名称字符串，并在删除任何属性时被调用（例如，`del object.attr`）。就像`__setattr__`，它必须通过`__dict__`和超类来避免递归循环。
+
+
+> As we’ll learn in Chapter 32, attributes implemented with new-style class features such as slots and properties are not physically stored in the instance’s `__dict__` namespace dictionary (and slots may even preclude its existence entirely!). Because of this, code that wishes to support such attributes should code `__setattr__` to assign with the object.`__setattr__` scheme shown here, not by self.`__dict__` indexing unless it’s known that subject classes store all their data in the instance itself. In Chapter 38 we’ll also see that the new-style `__getattribute__` has similar requirements. This change is mandated in Python 3.X, but also applies to 2.X if new-style classes are used.
+
+
+#### 其他属性管理工具
+
+
+
+#### 模拟实例属性的私有性：Part 1
+
+
 
 
 
