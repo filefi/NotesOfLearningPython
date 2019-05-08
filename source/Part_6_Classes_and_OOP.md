@@ -2700,15 +2700,96 @@ object.__setattr__(self, attr, value + 10) # OK: doesn't loop (new-style only)
 
 #### 其他属性管理工具
 
+在Python中还有其他方式来管理属性访问：
 
+- `__getattribute__`方法拦截所有的属性获取，而不只是那些未定义的，但是当使用它的时候，你必须比使用`__getattr__`更加小心地避免循环。
+- 内置函数`property`内置函数允许我们把方法和特定类属性上的获取和设置操作关联起来。
+- ***描述符（descriptors）***提供了一个协议，用于将一个类的`__get__`和`__set__`方法与对特定类属性的访问关联起来。
+- ***插槽（slots）***属性被声明在类中，但创建隐式的存储是在每个实例中。
 
 #### 模拟实例属性的私有性：Part 1
 
+下面文件`private0.py`中的代码把上一个例子通用化了，让每个子类都有自己的私有变量名列表，这些变量名无法通过其实例进行赋值：
 
+```python
+class PrivateExc(Exception): pass              # More on exceptions in Part VII
 
+class Privacy:
+    def __setattr__(self, attrname, value):    # On self.attrname = value
+        if attrname in self.privates:
+            raise PrivateExc(attrname, self)   # Make, raise user-define except
+        else:
+            self.__dict__[attrname] = value    # Avoid loops by using dict key
 
+class Test1(Privacy):
+    privates = ['age']
+
+class Test2(Privacy):
+    privates = ['name', 'pay']
+    def __init__(self):
+        self.__dict__['name'] = 'Tom'          # To do better, see Chapter 39!
+
+if __name__ == '__main__':
+    x = Test1()
+    y = Test2()
+    x.name = 'Bob'  # Works
+    #y.name = 'Sue' # Fails
+    print(x.name)
+    y.age = 30      # Works
+    #x.age = 40     # Fails
+    print(y.age)
+```
+
+实际上，虽然Python不支持`private`声明，但也可以通过这种方式实现属性私有性（即无法在类外对属性名进行修改）。不过，这只是一部分解决方案，使用 ***类装饰器*** 能更加通用地拦截和验证属性。
+
+捕获属性引用值和赋值可以支持 ***委托*** ，这也是一种设计技术。它可以让控制器对象包裹内嵌的对象，增加新行为，并且把其他运算传回包装的对象。
 
 ### 30.7 字符串重表示：`__repr__`和`__str__`
+如果定义了`__repr__`或`__str__`，当类实例被打印或被转换成字符串时，`__repr__`或`__str__`就会被自动调用。这两个方法允许你为你的对象定义一种更好的显示格式。
+
+对于一个类的实例对象，其默认显示既没有用也不好看：
+
+```python
+>>> class adder:
+        def __init__(self, value=0):
+            self.data = value                  # Initialize data
+        def __add__(self, other):
+            self.data += other                 # Add other in place (bad form?)
+>>> x = adder()                                # Default displays
+>>> print(x)                                   # 这样的打印输出基本上没什么实际意义
+<__main__.adder object at 0x00000000029736D8>
+>>> x
+<__main__.adder object at 0x00000000029736D8>
+```
+
+但是编写和继承字符串表示方法允许我们自定义显示：
+
+```python
+>>> class addrepr(adder):                       # Inherit __init__, __add__
+        def __repr__(self):                     # Add string representation
+            return 'addrepr(%s)' % self.data    # Convert to as-code string
+>>> x = addrepr(2)                              # Runs __init__
+>>> x + 1                                       # Runs __add__ (x.add() better?)
+>>> x                                           # Runs __repr__
+addrepr(3)
+>>> print(x)                                    # Runs __repr__
+addrepr(3)
+>>> str(x), repr(x)                             # Runs __repr__ for both
+('addrepr(3)', 'addrepr(3)')
+```
+
+上例中，`__repr__`使用基本字符串格式来将被管理的`self.data`对象转换为一种更友好的字符串显示。
+
+#### 为什么要两个显示方法？
+
+针对不同用户（audience），Python提供2个显示方法来支持可替代的显示方案：
+
+- 打印操作会首先尝试`__str__`和`str`内置函数（`print`运行的内部等价形式）。它通常返回一个用户友好的显示。
+- 如果`__str__`不存在，那么`__repr__`会被用于所有其他的环境中，如，交互模式的回应（echoes），函数`repr`，函数`print`，函数`str`，以及nested appearances。该方法通常返回一个类编码（as-code）字符串，可以用来重新创建对象，或者给开发者一个详细的显示。
+
+
+
+#### 显示使用注解（Usage Notes）
 
 
 
