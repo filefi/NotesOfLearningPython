@@ -2747,6 +2747,8 @@ if __name__ == '__main__':
 ### 30.7 字符串重表示：`__repr__`和`__str__`
 如果定义了`__repr__`或`__str__`，当类实例被打印或被转换成字符串时，`__repr__`或`__str__`就会被自动调用。这两个方法允许你为你的对象定义一种更好的显示格式。
 
+记住，`__str__`和`__repr__`都必须返回字符串。
+
 对于一个类的实例对象，其默认显示既没有用也不好看：
 
 ```python
@@ -2785,13 +2787,83 @@ addrepr(3)
 针对不同用户（audience），Python提供2个显示方法来支持可替代的显示方案：
 
 - 打印操作会首先尝试`__str__`和`str`内置函数（`print`运行的内部等价形式）。它通常返回一个用户友好的显示。
-- 如果`__str__`不存在，那么`__repr__`会被用于所有其他的环境中，如，交互模式的回应（echoes），函数`repr`，函数`print`，函数`str`，以及nested appearances。该方法通常返回一个类编码（as-code）字符串，可以用来重新创建对象，或者给开发者一个详细的显示。
+- 如果`__str__`不存在，那么`__repr__`会被用于所有环境中，如，交互模式的回应（echoes），函数`repr`，函数`print`，函数`str`，以及nested appearances。该方法通常返回一个类编码（as-code）字符串，可以用来重新创建对象，或者给开发者一个详细的显示。
+
+注意，如果没有定义`__str__`，打印还是使用`__repr__`，但反之则不成立，例如，交互模式响应只使用`__repr__`：
+
+```python
+>>> class addstr(adder):
+        def __str__(self):                      # __str__ but no __repr__
+            return '[Value: %s]' % self.data    # Convert to nice string
+>>> x = addstr(3)
+>>> x + 1
+>>> x                                            # Default __repr__
+<__main__.addstr object at 0x00000000029738D0>
+>>> print(x)                                     # Runs __str__
+[Value: 4]
+>>> str(x), repr(x)
+('[Value: 4]', '<__main__.addstr object at 0x00000000029738D0>')
+```
+
+**如果想让所有环境都有统一的显示，`__repr__`是最佳选择。但通过分别定义这两个方法，可以让不同环境支持不同显示。**
+
+```python
+>>> class addboth(adder):
+        def __str__(self):
+            return '[Value: %s]' % self.data # User-friendly string
+        def __repr__(self):
+            return 'addboth(%s)' % self.data # As-code string
+>>> x = addboth(4)
+>>> x + 1
+>>> x        # Runs __repr__
+addboth(5)
+>>> print(x) # Runs __str__
+[Value: 5]
+>>> str(x), repr(x)
+('[Value: 5]', 'addboth(5)')
+```
 
 
 
-#### 显示使用注解（Usage Notes）
+#### 显示用法的注意事项（Usage Notes）
+1. **记住`__str__`和`__repr__`都必须返回字符串，其他类型的结果不会转换并会引发错误，因此，如果有必要，确保用一个转换器（如，`str`或`%`）处理它们。**
+2. **根据一个容器的字符串转换逻辑，`__str__`的用户友好显示可能只适用于对象出现在一个打印操作的顶层时。当对象嵌套在较大的对象中，则可能依然会使用其`__repr__`或默认方法打印。**
 
+```python
+>>> class Printer:
+        def __init__(self, val):
+            self.val = val
+        def __str__(self):         # Used for instance itself
+            return str(self.val)   # Convert to a string result
+>>> objs = [Printer(2), Printer(3)]
+>>> for x in objs: print(x) # __str__ run when instance printed
+# But not when instance is in a list!
+2
+3
+>>> print(objs)     # 对于嵌套在列表中的2个Printer实例，依然使用__repr__进行打印
+[<__main__.Printer object at 0x000000000297AB38>, <__main__.Printer obj...etc...>]
+>>> objs
+[<__main__.Printer object at 0x000000000297AB38>, <__main__.Printer obj...etc...>]
+```
 
+如果想让所有环境都有统一的显示，请使用`__repr__`：
+```python
+>>> class Printer:
+        def __init__(self, val):
+            self.val = val
+        def __repr__(self):            # __repr__ used by print if no __str__
+            return str(self.val)       # __repr__ used if echoed or nested
+>>> objs = [Printer(2), Printer(3)]
+>>> for x in objs: print(x)            # No __str__: runs __repr__
+2
+3
+>>> print(objs)                        # Runs __repr__, not ___str__
+[2, 3]
+>>> objs
+[2, 3]
+```
+
+3. 非常微妙的是，在一些极少的环境中，显示方法可能也会触发无限递归循环。因为某些对象的显示包含其他对象的显示。一个显示触发一个正在被显示的对象的显示，这是有可能的，因此会产生循环。
 
 ### 30.8 右侧加法和原处加法的使用：`__radd__`和`__iadd__`
 
