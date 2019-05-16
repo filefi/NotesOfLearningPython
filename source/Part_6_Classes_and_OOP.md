@@ -2867,9 +2867,62 @@ addboth(5)
 
 ### 30.8 右侧加法和原处加法的使用：`__radd__`和`__iadd__`
 
+对于每个二元表达式，我可以实现 *左操作* 、*右操作*、*原地操作* 三种变体。虽然如果你不同时编写这三种变体的代码，也会应用缺省值，但是你的对象得角色决定了你需要编写多少个变体。
+
 #### 右侧（Right-Side）加法
 
+例如，`__add__`方法并不支持在`+`运算符右侧使用实例对象：
 
+```python
+>>> class Adder:
+        def __init__(self, value=0):
+            self.data = value
+        def __add__(self, other):
+            return self.data + other
+>>> x = Adder(5)
+>>> x + 2
+7
+>>> 2 + x
+TypeError: unsupported operand type(s) for +: 'int' and 'Adder'
+```
+
+为了实现更通用的表达式，并支持可互换的（commutative-style）操作符，就需要连同`__radd__`方法一起实现。
+
+只有当`+`运算符右侧的对象是你的类实例，而左侧的对象不是你的类实例时，Python才会调用`__radd__`方法。其他所有情况下，则会调用左侧对象的`__add__`方法。
+
+```python
+class Commuter1:
+    def __init__(self, val):
+        self.val = val
+    def __add__(self, other):
+        print('add', self.val, other)
+        return self.val + other
+    def __radd__(self, other):
+        print('radd', self.val, other)
+        return other + self.val
+    
+>>> from commuter import Commuter1
+>>> x = Commuter1(88)
+>>> y = Commuter1(99)
+>>> x + 1 # __add__: instance + noninstance
+add 88 1
+89
+>>> 1 + y # __radd__: noninstance + instance
+radd 99 1
+100
+>>> x + y # __add__: instance + instance, triggers __radd__
+add 88 <commuter.Commuter1 object at 0x00000000029B39E8>
+radd 99 88
+187
+```
+
+注意，在`__add__`中，`self`是在`+`的右侧，而`other`是在左侧；而在`__radd__`中的顺序则与之相反。
+
+当不同类的实例混合地出现在表达式中，Python会优先选择左侧的那个类。
+
+当我们把两个实例相加的时候，Python运行`__add__`，这反过来通过简化左边的操作数来触发`__radd__`。
+
+##### 在`__radd__`中重用`__add__`
 
 
 #### 原处（In-Place）加法
