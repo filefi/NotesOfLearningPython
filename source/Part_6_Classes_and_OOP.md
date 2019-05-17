@@ -3077,8 +3077,8 @@ radd 99 88
 >>> class Number:
     def __init__(self, val):
         self.val = val
-    def __iadd__(self, other): # __iadd__ explicit: x += y
-        self.val += other # Usually returns self
+    def __iadd__(self, other):             # __iadd__ explicit: x += y
+        self.val += other                  # Usually returns self
         return self
 >>> x = Number(5)
 >>> x += 1
@@ -3090,7 +3090,7 @@ radd 99 88
 对于可变对象，此方法通常可以专门用于更快的就地更改：
 
 ```python
->>> y = Number([1]) # In-place change faster than +
+>>> y = Number([1])           # In-place change faster than +
 >>> y += [2]
 >>> y += [3]
 >>> y.val
@@ -3103,11 +3103,11 @@ radd 99 88
 >>> class Number:
         def __init__(self, val):
             self.val = val
-        def __add__(self, other): # __add__ fallback: x = (x + y)
-            return Number(self.val + other) # Propagates class type
+        def __add__(self, other):                   # __add__ fallback: x = (x + y)
+            return Number(self.val + other)         # Propagates class type
 >>> x = Number(5)
 >>> x += 1
->>> x += 1 # And += does concatenation here
+>>> x += 1                                          # And += does concatenation here
 >>> x.val
 7
 ```
@@ -3115,6 +3115,21 @@ radd 99 88
 
 
 ### 30.9 Call表达式：`__call__`
+
+如果定义了`__call__`方法，当函数调用表达式被应用于实例时，`__call__`方法会被调用，并将接收到的所有参数传递给`__call__`。这允许实例遵循基于函数的API。其直接效果是，带有一个`__call__`方法的类和实例，支持与常规函数和方法完全相同的参数语法和语义。
+
+```python
+>>> class Callee:
+        def __call__(self, *pargs, **kargs):        # Intercept instance calls
+            print('Called:', pargs, kargs)          # Accept arbitrary arguments
+>>> C = Callee()
+>>> C(1, 2, 3)                                      # C is a callable object
+Called: (1, 2, 3) {}
+>>> C(1, 2, 3, x=4, y=5)
+Called: (1, 2, 3) {'y': 5, 'x': 4}
+```
+
+
 
 
 
