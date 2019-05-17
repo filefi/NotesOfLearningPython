@@ -2867,7 +2867,7 @@ addboth(5)
 
 ### 30.8 右侧加法和原处加法的使用：`__radd__`和`__iadd__`
 
-对于每个二元表达式，我可以实现 ***左操作*** 、***右操作***、***原地操作*** 三种变体。虽然如果你不同时编写这三种变体的代码，也会应用缺省值，但是你的对象的角色决定了你需要编写多少个变体。
+对于每个二元表达式，我可以实现 ***左侧操作*** 、***右侧操作***、***原处操作*** 三种变体。虽然如果你不同时编写这三种变体的代码，也会应用缺省值，但是你的对象的角色决定了你需要编写多少个变体。
 
 #### 右侧（Right-Side）加法
 
@@ -2916,7 +2916,7 @@ radd 99 88
 187
 ```
 
-注意，在`__add__`中，`self`是在`+`的右侧，而`other`是在左侧；而在`__radd__`中的顺序则与之相反。
+**注意，在`__add__`中，`self`是在`+`的左侧，而`other`是在右侧；而在`__radd__`中的顺序则与之相反。**
 
 当不同类的实例混合地出现在表达式中，Python会优先选择左侧的那个类。
 
@@ -2924,8 +2924,193 @@ radd 99 88
 
 ##### 在`__radd__`中重用`__add__`
 
+对于不需要按位置进行特殊套接的（special-casing）真正可交换操作，有时也可以将`__add__`重用于`__radd__`：
+
+- **通过在`__radd__`中直接调用`__add__`；**
+- **通过交换顺序并重新添加以间接地触发`__add__`；**
+- **简单地将`__radd__`指定为类声明顶层的`__add__`的别名（即，在类的作用域内）。**
+
+以下替代方案实现了所有这三种方案，并返回与原始方案相同的结果——尽管最后一种方案省去了额外的调用或调度，因此可能更快（总而言之，`__radd__`在自身位于+的右侧时运行）：
+
+1. 通过在`__radd__`中直接调用`__add__`：
+```python
+class Commuter2:
+    def __init__(self, val):
+        self.val = val
+    def __add__(self, other):
+        print('add', self.val, other)
+        return self.val + other
+    def __radd__(self, other):
+        return self.__add__(other)      # Call __add__ explicitly
+```
+
+2. 通过交换顺序并重新添加以间接地触发`__add__`：
+```python
+class Commuter3:
+    def __init__(self, val):
+        self.val = val
+    def __add__(self, other):
+        print('add', self.val, other)
+        return self.val + other
+    def __radd__(self, other):
+        return self + other             # Swap order and re-add
+```
+
+3. 或者简单地将`__radd__`指定为类声明顶层的`__add__`的别名（即，在类的作用域内）：
+```python
+class Commuter4:
+    def __init__(self, val):
+        self.val = val
+    def __add__(self, other):
+        print('add', self.val, other)
+        return self.val + other
+    __radd__ = __add__                  # Alias: cut out the middleman
+```
+
+在所有这三种方案中，右侧实例外观触发单个共享的`__add__`方法，将右操作数传递给`self`，将其视为与左侧外观相同。
+
+
+
+##### 传播类类型（propagating class type）
+
+在更实际的类中，类类型可能需要在结果中传播，事情可能变得更加棘手：可能需要进行类型测试来判断转换是否安全，从而避免嵌套。 例如，如果没有下面的`isinstance`测试，当两个实例相加，且`__add__`触发`__radd__`时，我们最终将得到一个`Commuter5`实例，其`val`是另一个`Commuter5`：
+
+```python
+class Commuter5:                                     # Propagate class type in results
+    def __init__(self, val):
+        self.val = val
+    def __add__(self, other):
+        if isinstance(other, Commuter5):             # Type test to avoid object nesting
+            other = other.val
+        return Commuter5(self.val + other)           # Else + result is another Commuter
+    def __radd__(self, other):
+        return Commuter5(other + self.val)
+    def __str__(self):
+        return '<Commuter5: %s>' % self.val
+
+>>> from commuter import Commuter5
+>>> x = Commuter5(88)
+>>> y = Commuter5(99)
+>>> print(x + 10)                                    # Result is another Commuter instance
+<Commuter5: 98>
+>>> print(10 + y)
+<Commuter5: 109>
+>>> z = x + y                                        # Not nested: doesn't recur to __radd__
+>>> print(z)
+<Commuter5: 187>
+>>> print(z + 10)
+<Commuter5: 197>
+>>> print(z + z)
+<Commuter5: 374>
+>>> print(z + z + 1)
+<Commuter5: 375>
+```
+
+这里对`isinstance`类型测试的需求是非常微妙的。将注释`isinstance`类型测试注释掉，然后运行和跟踪，以了解为什么需要它。 如果你这样做，你会看到前面测试的最后一部分结束了不同的和嵌套对象——它仍然正确地进行数学运算，但是开始无意义的递归调用以简化它们的值，并且额外的构造函数调用构建结果：
+
+```python
+class Commuter5:                                          # Propagate class type in results
+    def __init__(self, val):
+        self.val = val
+    def __add__(self, other):
+        # if isinstance(other, Commuter5):                # Type test to avoid object nesting
+            # other = other.val
+        return Commuter5(self.val + other)                # Else + result is another Commuter
+    def __radd__(self, other):
+        return Commuter5(other + self.val)
+    def __str__(self):
+        return '<Commuter5: %s>' % self.val
+
+>>> z = x + y                                             # With isinstance test commented-out
+>>> print(z)
+<Commuter5: <Commuter5: 187>>
+>>> print(z + 10)
+<Commuter5: <Commuter5: 197>>
+>>> print(z + z)
+<Commuter5: <Commuter5: <Commuter5: <Commuter5: 374>>>>
+>>> print(z + z + 1)
+<Commuter5: <Commuter5: <Commuter5: <Commuter5: 375>>>>
+```
+
+为了进行测试，`commuter.py`的剩余部分如下：
+
+```python
+#!python
+from __future__ import print_function # 2.X/3.X compatibility
+...classes defined here...
+
+if __name__ == '__main__':
+    for klass in (Commuter1, Commuter2, Commuter3, Commuter4, Commuter5):
+        print('-' * 60)
+        x = klass(88)
+        y = klass(99)
+        print(x + 1)
+        print(1 + y)
+        print(x + y)
+```
+
+```python
+c:\code> commuter.py
+------------------------------------------------------------
+add 88 1
+89
+radd 99 1
+100
+add 88 <__main__.Commuter1 object at 0x000000000297F2B0>
+radd 99 88
+187
+------------------------------------------------------------
+...etc...
+```
+
+这里有太多的编码变体需要探索，因此请自行尝试这些类以加深理解。 例如，在Commuter5中将`__radd__`别名为`__add__`可以省去一行代码，但不会在没有`isinstance`的情况下阻止对象嵌套。 有关此域中其他选项的讨论，另请参阅Python手册，例如，类也可以为不受支持的操作数返回特殊的`NotImplemented`对象以影响方法选择（这被视为未定义方法）。
+
+
 
 #### 原处（In-Place）加法
+
+为了也实现`+=`原处扩展相加，需要编写一个`__iadd__`或`__add__`。如果`__iadd__`不存在，则会使用`__add__`。
+
+由于前面小节的`Commuter`类已经实现了`__add__`，所以实际上已经支持了`+=`。但是，`__iadd__`方法允许更高效的原处修改（in-place changes）。
+
+```python
+>>> class Number:
+    def __init__(self, val):
+        self.val = val
+    def __iadd__(self, other): # __iadd__ explicit: x += y
+        self.val += other # Usually returns self
+        return self
+>>> x = Number(5)
+>>> x += 1
+>>> x += 1
+>>> x.val
+7
+```
+
+对于可变对象，此方法通常可以专门用于更快的就地更改：
+
+```python
+>>> y = Number([1]) # In-place change faster than +
+>>> y += [2]
+>>> y += [3]
+>>> y.val
+[1, 2, 3]
+```
+
+普通的`__add__`被作为退而求其次的方式呗运行，但可能无法优化原处修改的情况：
+
+```python
+>>> class Number:
+        def __init__(self, val):
+            self.val = val
+        def __add__(self, other): # __add__ fallback: x = (x + y)
+            return Number(self.val + other) # Propagates class type
+>>> x = Number(5)
+>>> x += 1
+>>> x += 1 # And += does concatenation here
+>>> x.val
+7
+```
 
 
 
