@@ -3218,11 +3218,91 @@ obj()                   # On event prints 'turn blue'
 - 与前面讨论的`__add__`和`__radd__`不同，比较方法没有右侧形式（right-side variants）。相反，当只有一个运算数支持比较的时候，使用其对应方法（例如，`__lt__`和`__gt__`互为对应）。
 - 比较运算符没有隐式关系。例如，`==`并不意味着`!=`是假的，因此，`__eq__`和`__ne__`应该定义为确保两个运算符都正确地作用。
 
+```python
+class C:
+    data = 'spam'
+    def __gt__(self, other): # 3.X and 2.X version
+        return self.data > other
+    def __lt__(self, other):
+        return self.data < other
+
+X = C()
+print(X > 'ham')      # True (runs __gt__)
+print(X < 'ham')      # False (runs __lt__)
+```
+
+
+
 ### 30.11 布尔测试：`__bool__`和`__len__`
 
+在Python中，每个对象本质上都是 **真** 或 **假** 。当你编写类时，通过编写在请求时返回实例的`True`和`False`值的方法（method），你可以定义真和假对你的对象意味着什么。
 
+在布尔环境中，Python 3.X 首先尝试`__bool__`来获取一个直接的布尔值，如果`__bool__`没有被实现，则尝试`__len__`来根据对象的长度推断出一个真值。通常，首先使用对象状态或其他信息来生成一个Boolean结果。
+
+```python
+>>> class Truth:
+        def __bool__(self): return True
+>>> X = Truth()
+>>> if X: print('yes!')
+yes!
+>>> class Truth:
+        def __bool__(self): return False
+>>> X = Truth()
+>>> bool(X)
+False
+```
+
+如果没有`__len__`，Python退而取长度，因为一个非零长度意味着对象是真，而长度为0意味着对象为假：
+
+```python
+>>> class Truth:
+    def __len__(self): return 0
+>>> X = Truth()
+>>> if not X: print('no!')
+no!
+```
+
+如果两个方法都有，Python优选`__bool_`而不是`__len__`：
+
+```python
+>>> class Truth:
+        def __bool__(self): return True       # 3.X tries __bool__ first
+        def __len__(self): return 0           # 2.X tries __len__ first
+>>> X = Truth()
+>>> if X: print('yes!')
+yes!
+```
+
+如果没有定义真的方法，对象被看作为真：
+
+```python
+>>> class Truth:
+        pass
+>>> X = Truth()
+>>> bool(X)
+True
+```
 
 ### 30.12 对象析构函数：`__del__`
+
+每当实例产生时，就会调用`__init__`构造函数。每当实例空间被回收时（在垃圾回收时），析构函数`__del__`就会自动执行：
+
+```python
+>>> class Life:
+        def __init__(self, name='unknown'):
+            print('Hello ' + name)
+            self.name = name
+        def live(self):
+            print(self.name)
+        def __del__(self):
+            print('Goodbye ' + self.name)
+>>> brian = Life('Brian')
+Hello Brian
+>>> brian.live()
+Brian
+>>> brian = 'loretta'
+Goodbye Brian
+```
 
 
 
