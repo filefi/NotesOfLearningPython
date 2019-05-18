@@ -3130,6 +3130,76 @@ Called: (1, 2, 3) {'y': 5, 'x': 4}
 ```
 
 
+#### 函数接口和回调代码（Function Interfaces and Callback-Based Code）
+作为例子，GUI工具箱`tkinter`可以把函数注册成事件处理器（也就是回调函数callback）。当事件发生时，`tkinter`会调用已注册的对象。如果想让事件处理器保存事件之间的状态，可以使用 ***类的绑定方法***（bound method），或者***遵循所需接口的实例***（具有`__call__`）来进行注册。
+
+##### 遵循所需接口的实例
+
+下例定义了一个支持`__call__`的对象，并将其应用于GUI领域。这样既支持函数调用接口，也能保存状态信息，可记住售后按下按钮后应该变成什么颜色：
+
+```python
+class Callback:
+    def __init__(self, color): # Function + state information
+        self.color = color
+    def __call__(self): # Support calls with no arguments
+        print('turn', self.color)
+```
+
+现在，在GUI环境中，即使这个GUI期待的事件处理器是无参数的简单函数，我们还是可以将这个类注册为按钮的事件处理器：
+
+```python
+# Handlers
+cb1 = Callback('blue') # Remember blue
+cb2 = Callback('green') # Remember green
+B1 = Button(command=cb1) # Register handlers
+B2 = Button(command=cb2)
+```
+
+当按下这个按钮时，会把实例对象当成简单的函数来调用：
+
+```python
+# Events
+cb1() # Prints 'turn blue'
+cb2() # Prints 'turn green'
+```
+
+**实际上，这种利用OOP的方式可能是Python语言中保留状态信息最好的方式，比之前针对函数所讨论的技术（全局变量、嵌套函数作用域引用以及默认可变参数等）。**
+
+另一方面，在基本状态信息保持方面，像闭包函数这样的工具也是非常有用的。并且， Python 3.X的`nonlocal`语句使得嵌套作用域（enclosing scopes）在更多程序中都成为一种可用的替代方案。
+
+```python
+def callback(color):            # Enclosing scope versus attrs
+    def oncall():
+        print('turn', color)
+    return oncall
+
+cb3 = callback('yellow')        # Handler to be registered
+cb3()                           # On event: prints 'turn yellow'
+```
+
+##### Lambda表达式
+
+同时，使用Lambda函数的默认参数，也可以把信息和回调函数联系起来：
+
+```python
+cb4 = (lambda color='red': 'turn ' + color) # Defaults retain state too
+print(cb4())
+```
+
+##### 类的绑定方法
+
+```python
+class Callback:
+    def __init__(self, color): # Class with state information
+        self.color = color
+    def changeColor(self): # A normal named method
+        print('turn', self.color)
+
+cb1 = Callback('blue')
+cb2 = Callback('yellow')
+B1 = Button(command=cb1.changeColor) # Bound method: reference, don't call
+B2 = Button(command=cb2.changeColor) # Remembers function + self pair
+```
 
 
 
