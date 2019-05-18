@@ -3201,6 +3201,14 @@ B1 = Button(command=cb1.changeColor) # Bound method: reference, don't call
 B2 = Button(command=cb2.changeColor) # Remembers function + self pair
 ```
 
+当按钮按下时，`changeColor`方法同样可以处理对象的状态信息：
+
+```python
+cb1 = Callback('blue')
+obj = cb1.changeColor   # Registered event handler
+obj()                   # On event prints 'turn blue'
+```
+
 
 
 ### 30.10 比较：`__lt__`、`__gt__`和其他方法
