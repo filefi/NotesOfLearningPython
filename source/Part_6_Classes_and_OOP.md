@@ -3334,21 +3334,231 @@ Python的OOP实现可以概括为3个概念：
 
 #### 多态意味着接口，而不是调用签名（call signatures）
 
+在Python中，多态是基于对象接口的，而不是类型。
 
+应该把程序代码写成预期的对象接口，而不应该依赖于类型测试。
 
 ### 31.2 OOP和继承：“是一个”关系
 
+从程序员的角度来看，继承是有属性点号运算启动的，由此出发实例、类以及任何超类中的变量名搜索。从设计师的角度来看，继承是一种定义集合成员关系的方式：类定义了一组内容属性，可由更具体的集合（子类）继承和定制。
+
+```python
+# File employees.py (2.X + 3.X)
+from __future__ import print_function
+
+class Employee:
+    def __init__(self, name, salary=0):
+        self.name = name
+        self.salary = salary
+    def giveRaise(self, percent):
+        self.salary = self.salary + (self.salary * percent)
+    def work(self):
+        print(self.name, "does stuff")
+    def __repr__(self):
+        return "<Employee: name=%s, salary=%s>" % (self.name, self.salary)
+    
+class Chef(Employee):
+    def __init__(self, name):
+        Employee.__init__(self, name, 50000)
+    def work(self):
+        print(self.name, "makes food")
+
+class Server(Employee):
+    def __init__(self, name):
+        Employee.__init__(self, name, 40000)
+    def work(self):
+        print(self.name, "interfaces with customer")
+
+class PizzaRobot(Chef):
+    def __init__(self, name):
+        Chef.__init__(self, name)
+    def work(self):
+        print(self.name, "makes pizza")
+
+if __name__ == "__main__":
+    bob = PizzaRobot('bob') # Make a robot named bob
+    print(bob) # Run inherited __repr__
+    bob.work() # Run type-specific action
+    bob.giveRaise(0.20) # Give bob a 20% raise
+    print(bob); print()
+    
+    for klass in Employee, Chef, Server, PizzaRobot:
+        obj = klass(klass.__name__)
+        obj.work()
+```
+
+```python
+c:\code> python employees.py
+<Employee: name=bob, salary=50000>
+bob makes pizza
+<Employee: name=bob, salary=60000.0>
+Employee does stuff
+Chef makes food
+Server interfaces with customer
+PizzaRobot makes pizza
+```
 
 
-### 31.3 OOP和组合：“有一个”关系
+
+### 31.3 OOP和组合（Composition）：“有一个”关系
+
+组合（composition），也称为 **聚合** （aggregation），是指内嵌其他对象的类。组合类一般都提供自己的接口，并通过内嵌的对象来实现接口。组合反映了各组成部分（其他内嵌其中的对象）之间的关系。
+
+```python
+# File pizzashop.py (2.X + 3.X)
+from __future__ import print_function
+from employees import PizzaRobot, Server
+
+class Customer:
+    def __init__(self, name):
+        self.name = name
+    def order(self, server):
+        print(self.name, "orders from", server)
+    def pay(self, server):
+        print(self.name, "pays for item to", server)
+
+class Oven:
+    def bake(self):
+    print("oven bakes")
+
+class PizzaShop:
+    def __init__(self):
+        self.server = Server('Pat') # Embed other objects
+        self.chef = PizzaRobot('Bob') # A robot named bob
+        self.oven = Oven()
+    def order(self, name):
+        customer = Customer(name) # Activate other objects
+        customer.order(self.server) # Customer orders from server
+        self.chef.work()
+        self.oven.bake()
+        customer.pay(self.server)
+
+if __name__ == "__main__":
+    scene = PizzaShop() # Make the composite
+    scene.order('Homer') # Simulate Homer's order
+    print('...')
+    scene.order('Shaggy') # Simulate Shaggy's order
+```
+
+```python
+c:\code> python pizzashop.py
+Homer orders from <Employee: name=Pat, salary=40000>
+Bob makes pizza
+oven bakes
+Homer pays for item to <Employee: name=Pat, salary=40000>
+...
+Shaggy orders from <Employee: name=Pat, salary=40000>
+Bob makes pizza
+oven bakes
+Shaggy pays for item to <Employee: name=Pat, salary=40000>
+```
+
+#### 回顾流处理器
+回忆第26章中的通用数据流处理函数：
+```python
+def processor(reader, converter, writer):
+    while True:
+        data = reader.read()
+        if not data: break
+        data = converter(data)
+        writer.write(data)
+```
+
+在这里我们使用类来编写，使用组合机制来提供更强大的结构并支持继承：
+```python
+# streams.py
+
+class Processor:
+    def __init__(self, reader, writer):
+        self.reader = reader
+        self.writer = writer
+
+    def process(self):
+        while True:
+            data = self.reader.readline()
+            if not data: break
+            data = self.converter(data)
+            self.writer.write(data)
+
+    def converter(self, data):
+        assert False, 'converter must be defined' # Or raise exception
+```
+这个类定义了一个转换器方法，它是一个抽象超类方法，期待子类来实现。
+
+```python
+# converters.py
+
+from streams import Processor
+
+class Uppercase(Processor):  # 自动继承__init__，没有特殊目的，不必重写父类构造函数
+    def converter(self, data):
+        return data.upper()
+
+if __name__ == '__main__':
+    import sys
+    obj = Uppercase(open('trispam.txt'), sys.stdout)
+    obj.process()
+```
+
+也可以输出到文件，而不是流：
+
+```python
+C:\code> python
+>>> import converters
+>>> prog = converters.Uppercase(open('trispam.txt'), open('trispamup.txt', 'w'))
+>>> prog.process()
+
+C:\code> type trispamup.txt
+SPAM
+SPAM
+SPAM!
+```
 
 
 
-### 31.4 OOP和委托：“包装”代理对象
+### 31.4 OOP和委托（Delegation）：“包装”代理对象
 
+所谓 **委托** （delegation）是指控制器对象内嵌其他对象，而把运算请求传给那些对象。在Python中，委托通常是以`__getattr__`钩子方法实现的。
 
+```python
+# trace.py
+class Wrapper:
+    def __init__(self, object):
+        self.wrapped = object                  # Save object
+    def __getattr__(self, attrname):
+        print('Trace: ' + attrname)            # Trace fetch
+        return getattr(self.wrapped, attrname) # Delegate fetch
+```
+
+```python
+>>> from trace import Wrapper
+>>> x = Wrapper([1, 2, 3])         # Wrap a list
+>>> x.append(4)                    # Delegate to list method
+Trace: append
+>>> x.wrapped                      # Print my member
+[1, 2, 3, 4]
+>>> x = Wrapper({'a': 1, 'b': 2})  # Wrap a dictionary
+>>> list(x.keys())                 # Delegate to dictionary method
+Trace: keys
+['a', 'b']
+```
+
+实际效果就是以包装类内额外的代码来增强被包装的对象的整个接口。
 
 ### 31.5 类的伪私有属性
+
+Python也支持变量名压缩（mangling）的概念，让类内某些变量局部化成为“伪私有”的。
+
+#### 变量名压缩概览
+
+变量名压缩的工作方式：
+
+- `class`语句内开头有两个下划线，但结尾没有两个下划线的变量名会自动扩展，而包含了所在类的名称。例如，类`Spam`内的`__X`变量名会自动变成`_Spam__X`。
+- 变量名压缩只发生在`class`语句内，而且只针对开头有两个下划线的变量名（包括方法名称和属性名称）。例如，在类`Spam`中，引用的`self.__X`实例属性会变成`self._Spam__X`。
+
+#### 为什么使用伪私有属性？
+
+
 
 
 
