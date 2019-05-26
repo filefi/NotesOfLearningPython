@@ -3558,6 +3558,67 @@ Python也支持变量名压缩（mangling）的概念，让类内某些变量局
 
 #### 为什么使用伪私有属性？
 
+在Python中，所有实例属性最后都会在类树底部的单个实例对象内。这一点和C++模型大不相同，C++模型的每个类都有自己的空间来存储其所定义的数据成员。
+
+在Python的类方法内，每当方法赋值`self`的属性时（例如，`self.attr = value`），就会在该实例内修改或创建该属性（继承搜索只发生在引用时，而不是赋值时）。
+
+假设有类`C1`和`C2`：
+
+```python
+class C1:
+    def meth1(self): self.X = 88 # I assume X is mine
+    def meth2(self): print(self.X)
+
+class C2:
+    def metha(self): self.X = 99 # Me too
+    def methb(self): print(self.X)
+```
+
+这两个类独立各行其事时，不会有问题，属性`X`也不会冲突。但如果这两个类混合在相同类树中时，问题就出现了：
+
+```python
+>>> class C3(C1, C2):
+...     pass
+...
+>>> I = C3()    
+>>> I.meth1()       # 调用C1的meth1对属性X赋值
+>>> I.metha()       # 调用C2的metha对属性X赋值
+>>> I.X             # 在实例I中，只存在1个属性X，后出现的属性赋值语句会覆盖之前出现的。
+99
+```
+
+为了保证属性`X`属于使用它的类，可在变量名前加上两个下划线：
+
+```python
+# pseudoprivate.py
+class C1:
+    def meth1(self): self.__X = 88      # Now X is mine
+    def meth2(self): print(self.__X)    # Becomes _C1__X in I
+
+class C2:
+    def metha(self): self.__X = 99      # Me too
+    def methb(self): print(self.__X)    # Becomes _C2__X in I
+
+class C3(C1, C2): 
+    pass
+
+if __name__ == '__main__':
+    I = C3()                            # 实例中有2个属性X
+    I.meth1(); I.metha()
+    print(I.__dict__)
+    I.meth2(); I.methb()
+```
+
+这个技巧可避免实例中潜在的变量名冲突。
+```python
+>>> I = C3()                            # 实例中有2个属性X
+>>> I.meth1(); I.metha()
+>>> print(I.__dict__)                   # 属性__X自动扩展为_C1__X和_C2__X
+{'_C1__X': 88, '_C2__X': 99}
+>>> I.meth2(); I.methb()
+88
+99
+```
 
 
 
