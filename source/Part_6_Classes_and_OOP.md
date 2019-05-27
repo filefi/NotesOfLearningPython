@@ -3672,7 +3672,7 @@ class Eggs:
 Eggs().m2()            # Prints 42
 ```
 
-> 在第32章，会讨论 **静态方法** 和 **类方法** 。就像绑定方法一样，静态方法也可以冒充基本函数。因为它们都不在调用时期望一个实例对象作为参数。正式地说，Python 3.X 支持 3种类方法（实例方法，静态方法和类方法），并且Python 3.X 也允许类中存在简单函数。第40章中的元类方法（metaclass method）也不相同，但它们本质上是具有较小作用域的类方法。
+> 在第32章，会讨论 **静态方法** 和 **类方法** 。就像绑定方法一样，静态方法也可以冒充基本函数。因为它们都不在调用时期望一个实例对象作为参数。正式地说，Python 3.X 支持 3种类方法（**实例方法**，**静态方法**和**类方法**），并且Python 3.X 也允许类中存在简单函数。第40章中的元类方法（metaclass method）也不相同，但它们本质上是具有较小作用域的类方法。
 
 #### 在Python 3.X中，无绑定方法是函数
 
@@ -3818,7 +3818,29 @@ widget = Button(text='spam', command=handler)
 
 ### 31.7 类是对象：通用的对象工厂
 
+类是对象，因此它很容易在程序中进行传递，保存在数据结构中。也可以把类传给会产生任意种类对象的函数。这类函数在OOP设计领域中称为工厂函数。
 
+```python
+def factory(aClass, *pargs, **kargs):         # Varargs tuple, dict
+    return aClass(*pargs, **kargs)            # Call aClass (or apply in 2.X only)
+
+class Spam:
+    def doit(self, message):
+        print(message)
+
+class Person:
+    def __init__(self, name, job=None):
+        self.name = name
+        self.job = job
+
+object1 = factory(Spam)                       # Make a Spam object
+object2 = factory(Person, "Arthur", "King")   # Make a Person object
+object3 = factory(Person, name='Brian')       # Ditto, with keywords and default
+```
+
+#### 为什么需要工厂
+
+有时候，我们可能无法在脚本中把流的接口对象的建立方式固定下来，当需要根据配置文件的内容在运行期间动态创建对象时，就可以使用工厂设计模式。使用工厂函数可以将代码和动态配置对象的构造细节隔离开。
 
 ### 31.8 多重继承：“混合”类 
 
@@ -3826,7 +3848,14 @@ widget = Button(text='spam', command=handler)
 
 ### 31.9 与设计相关的其他话题
 
+本书其他地方还介绍其他与类设计相关的话题：
 
+- Abstract superclasses (Chapter 29)
+- Decorators (Chapter 32 and Chapter 39)
+- Type subclasses (Chapter 32)
+- Static and class methods (Chapter 32)
+- Managed attributes (Chapter 32 and Chapter 38)
+- Metaclasses (Chapter 32 and Chapter 40)
 
 
 
