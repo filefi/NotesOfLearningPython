@@ -3625,6 +3625,195 @@ if __name__ == '__main__':
 
 ### 31.6 方法是对象：绑定或未绑定
 
+就像函数一样，方法也是一种对象，它与其他大部分对象的使用方式相同，如：可以对它赋值、将其传递给函数、存储在数据结构中，等等。
+
+由于类方法可以从一个实例或一个类访问，它们实际上在Python中有2种形式：
+
+- 无绑定（类）方法对象（无`self`）：通过对类进行点号运算从而获取类的函数属性，会传回无绑定（unbound）方法对象。调用该方法时，必须明确提供实例对象作为第一个参数，如`Class.method(instance, arg)`。
+- 绑定（实例）方法对象（`self`+函数对）：通过限定（qualify）实例来访问类的函数属性，将返回绑定的（bound）方法对象。调用绑定方法时，Python自动把实例传递给绑定方法的第一个参数（通常是`self`），并将实例和方法对象进行打包，如`instance.method(arg)`。
+
+也就是说，绑定方法对象通常都可和简单函数对象互换，而且对于原本就是针对函数而编写的接口而言，就相当有用了。例如，我们有以下类：
+```python
+class Spam:
+    def doit(self, message):
+        print(message)
+```
+
+创建一个实例，并调用`doit`方法：
+```python
+object1 = Spam()
+object1.doit('hello world')
+```
+
+实际上我们可以获取绑定方法，而不实际调用它。然后将其赋值给另一个变量名，然后就像简单函数一样进行调用：
+```python
+object1 = Spam()
+x = object1.doit     # Bound method object: instance+function
+x('hello world')     # Same effect as object1.doit('...')
+```
+
+另一方面，如果对类进行点号运算来获得`doit`，就会得到无绑定（unbound）方法对象，也就是函数对象的引用值。要调用该方法，必须将实例作为方法的第一个参数传入。
+```python
+object1 = Spam()
+t = Spam.doit           # Unbound method object (a function in 3.X: see ahead)
+t(object1, 'howdy')     # Pass in instance (if the method expects one in 3.X)
+```
+
+更进一步，如果我们引用的`self`的属性是引用类中的函数，那么同样的规则也适用于类的方法。
+
+```python
+class Eggs:
+    def m1(self, n):
+        print(n)
+    def m2(self):
+        x = self.m1    # Another bound method object
+        x(42)          # Looks like a simple function
+
+Eggs().m2()            # Prints 42
+```
+
+> 在第32章，会讨论 **静态方法** 和 **类方法** 。就像绑定方法一样，静态方法也可以冒充基本函数。因为它们都不在调用时期望一个实例对象作为参数。正式地说，Python 3.X 支持 3种类方法（实例方法，静态方法和类方法），并且Python 3.X 也允许类中存在简单函数。第40章中的元类方法（metaclass method）也不相同，但它们本质上是具有较小作用域的类方法。
+
+#### 在Python 3.X中，无绑定方法是函数
+
+在Python 3.X中，已经删除了Python 2.X中的无绑定方法概念。无绑定函数在Python 3.0中被当做简单函数对待。
+
+在Python 3.X，如果一个方法不期待一个实例作为其参数，那么不使用实例来调用方法，或者不将实例作为参数传递方法而直接调用方法，是完全没有问题的：
+
+```python
+>>> class Selfless:
+    def __init__(self, data):
+        self.data = data
+    def selfless(arg1, arg2):           # A simple function in 3.X
+        return arg1 + arg2
+    def normal(self, arg1, arg2):       # Instance expected when called
+        return self.data + arg1 + arg2
+>>> X = Selfless(2)
+>>> X.normal(3, 4)              # Instance passed to self automatically: 2+(3+4)
+9
+>>> Selfless.normal(X, 3, 4)    # self expected by method: pass manually
+9
+>>> Selfless.selfless(3, 4)     # No instance: works in 3.X, fails in 2.X!
+7
+```
+
+而以下两种调用方式在Python 3.X中和Python 2.X中都是错误的：
+
+```python
+>>> X.selfless(3, 4)
+TypeError: selfless() takes 2 positional arguments but 3 were given
+>>> Selfless.normal(3, 4)
+TypeError: normal() missing 1 required positional argument: 'arg2'
+```
+
+由于Python 3.X的这一改动，对于只通过类名而不通过一个实例调用的、不期待`self`参数的方法，不再需要下一章介绍的`staticmethod`装饰器。
+
+#### 绑定方法和其他可调用对象
+
+由于绑定方法可以将函数对象和实例对象配对打包，因此可以像任何其他可调用对象一样对待，并且在调用的时候不需要特殊的语法。
+
+例如，如下的例子在一个列表中存储了4个绑定方法对象，并且随后使用常规的调用表达式来调用它们：
+
+```python
+>>> class Number:
+    def __init__(self, base):
+        self.base = base
+    def double(self):
+        return self.base * 2
+    def triple(self):
+        return self.base * 3
+>>> x = Number(2)             # Class instance objects
+>>> y = Number(3)             # State + methods
+>>> z = Number(4)
+>>> x.double()                # Normal immediate calls
+4
+>>> acts = [x.double, y.double, y.triple, z.double]    # List of bound methods
+>>> for act in acts:                                   # Calls are deferred
+        print(act())                                   # Call as though functions
+4
+6
+98
+```
+
+和简单函数一样，绑定方法对象拥有自己的内省信息，包括让它们配对的实例对象和方法函数访问的属性。调用绑定方法会直接分配配对：
+
+```python
+>>> bound = x.double
+>>> bound.__self__, bound.__func__
+(<__main__.Number object at 0x...etc...>, <function Number.double at 0x...etc...>)
+>>> bound.__self__.base
+2
+>>> bound() # Calls bound.__func__(bound.__self__, ...)
+4
+```
+
+##### 其他可调用对象
+
+实际上，绑定方法只是Python中众多的可调用对象类型中的一种。其他的可调用对象还有：简单函数，继承`__call__`的对象，类。
+
+````python
+>>> def square(arg):
+        return arg ** 2                # Simple functions (def or lambda)
+
+>>> class Sum:
+        def __init__(self, val):       # Callable instances
+            self.val = val
+        def __call__(self, arg):
+            return self.val + arg
+
+>>> class Product:
+        def __init__(self, val):       # Bound methods
+            self.val = val
+        def method(self, arg):
+            return self.val * arg
+
+>>> class Negate:      # 类也是一种可调用对象，但是通常调用它们来产生实例而不是做其他实际工作
+        def __init__(self, val):       # Classes are callables too
+            self.val = -val            # But called for object, not work
+        def __repr__(self):            # Instance print format
+            return str(self.val)
+
+>>> sobject = Sum(2)
+>>> pobject = Product(3)
+>>> actions = [square, sobject, pobject.method, Negate]    # Call a class too
+>>> for act in actions:
+        print(act(5))
+25
+7
+15
+-5
+>>> [act(5) for act in actions]                            # Runs __repr__ not __str__!
+[25, 7, 15, −5]
+>>> table = {act(5): act for act in actions}               # 3.X/2.7 dict comprehension
+>>> for (key, value) in table.items():
+        print('{0:2} => {1}'.format(key, value))           # 2.6+/3.X str.format
+25 => <function square at 0x0000000002987400>
+15 => <bound method Product.method of <__main__.Product object at ...etc...>>
+-5 => <class '__main__.Negate'>
+7 => <__main__.Sum object at 0x000000000298BE48>
+````
+
+##### 为什么要在意绑定方法和回调函数
+
+因为绑定方法会自动让实例和类方法函数配对，因此可以在任何希望得到简单函数的地方使用。最常见的使用，就是把方法注册成`tkinter`GUI接口中事件回调处理器：
+
+```python
+class MyGui:
+    def handler(self):
+        # ...use self.attr for state...
+    def makewidgets(self):
+        b = Button(text='spam', command=self.handler)
+```
+
+使用这种方式的优点在于，绑定方法可以读取在事件间用于保留状态信息的实例的属性。而如果利用简单函数，状态信息一般都必须通过全局变量保存。
+
+```python
+def handler():
+    # ...use globals or closure scopes for state...
+
+widget = Button(text='spam', command=handler)
+```
+
 
 
 ### 31.7 类是对象：通用的对象工厂
