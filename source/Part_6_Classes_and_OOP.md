@@ -3844,6 +3844,174 @@ object3 = factory(Person, name='Brian')       # Ditto, with keywords and default
 
 ### 31.8 多重继承：“混合”类 
 
+所谓 ***多重继承***，即，在`class`语句中，首行括号内可以列出一个以上的超类，类和其实例继承了列出的所有超类的变量名。
+
+由于超类本身可能还有其自己的超类，所以属性搜索的过程可能比较复杂：
+
+- 在传统类（非新式类），属性搜索处理对所有路径深度优先，直到继承树的顶端，然后从左到右进行。
+- 在新式类（以及Python 3.X的所有类）中，属性搜索处理沿着树层级，以广度优先的方式进行。
+
+不管哪种搜索方式，搜索属性时，当一个类拥有多个超类时，Python都会根据`class`语句头部列出的顺序，由左至右查找超类，直到找到符合的属性。
+
+#### 编写混合显示类（Mix-in Display Classes）
+
+正如我们所看到的，Python打印一个类实例对象的默认方式并不是很有用：
+
+```python
+>>> class Spam:
+        def __init__(self): # No __repr__ or __str__
+            self.data1 = "food"
+>>> X = Spam()
+>>> print(X) # Default: class name + address (id)
+<__main__.Spam object at 0x00000000029CA908> # Same in 2.X, but says "instance"
+```
+
+我们可以在一个通用工具类中编写`__repr__`或`__str__`，然后在所有需要打印的类中继承，使得我们可以在想要定制实例的显示格式的任何地方重用它。这就是混合类的用处。
+
+##### 用`__dict__`列出实例属性
+
+以下在`listinstance.py`中定义一个混合类`ListInstance`，并将它作为通用工具，提供所有继承它的子类格式化打印其实例的方法：
+
+```python
+#!python
+# File listinstance.py (2.X + 3.X)
+class ListInstance:
+    """
+    Mix-in class that provides a formatted print() or str() of instances via
+    inheritance of __str__ coded here; displays instance attrs only; self is
+    instance of lowest class; __X names avoid clashing with client's attrs
+    """
+    def __attrnames(self):
+        result = ''
+        for attr in sorted(self.__dict__):
+            result += '\t%s=%s\n' % (attr, self.__dict__[attr])
+        return result
+ 
+    def __str__(self):
+        return '<Instance of %s, address %s:\n%s>' % (
+                    self.__class__.__name__,       # My class's name
+                    id(self),                      # My address
+                    self.__attrnames())            # name=value list
+
+if __name__ == '__main__':
+    import testmixin
+    testmixin.tester(ListInstance)
+```
+
+如下是在单继承模式下的情况：
+
+```python
+>>> from listinstance import ListInstance
+>>> class Spam(ListInstance): # Inherit a __str__ method
+        def __init__(self):
+            self.data1 = 'food'
+>>> x = Spam()
+>>> print(x) # print() and str() run __str__
+<Instance of Spam, address 43034496:
+data1=food
+>
+```
+
+如下是在多继承模式下的情况：
+
+```python
+# File testmixin0.py
+from listinstance import ListInstance # Get lister tool class
+
+class Super:
+    def __init__(self): # Superclass __init__
+        self.data1 = 'spam' # Create instance attrs
+    def ham(self):
+        pass
+
+class Sub(Super, ListInstance): # Mix in ham and a __str__
+    def __init__(self): # Listers have access to self
+        Super.__init__(self)
+        self.data2 = 'eggs' # More instance attrs
+        self.data3 = 42
+    def spam(self): # Define another method here
+        pass
+
+if __name__ == '__main__':
+    X = Sub()
+    print(X) # Run mixed-in __str__
+```
+
+这里`Sub`从`Super`和`ListInstance`继承了变量名，它是自己的变量名与其超类中变量名的组合。
+
+```python
+c:\code> python testmixin0.py
+<Instance of Sub, address 44304144:
+data1=spam
+data2=eggs
+data3=42
+>
+```
+
+为了更加灵活，我们借用第25章的模块加载器，传入要测试的对象：
+
+```python
+#!python
+# File testmixin.py (2.X + 3.X)
+"""
+Generic lister mixin tester: similar to transitive reloader in
+Chapter 25, but passes a class object to tester (not function),
+Multiple Inheritance: “Mix-in” Classes | 961
+and testByNames adds loading of both module and class by name
+strings here, in keeping with Chapter 31's factories pattern.
+"""
+import importlib
+
+def tester(listerclass, sept=False):
+    class Super:
+        def __init__(self):                              # Superclass __init__
+            self.data1 = 'spam'                          # Create instance attrs
+        def ham(self):
+            pass
+
+    class Sub(Super, listerclass):                       # Mix in ham and a __str__
+        def __init__(self):                              # Listers have access to self
+            Super.__init__(self)
+            self.data2 = 'eggs'                          # More instance attrs
+            self.data3 = 42
+        def spam(self):                                  # Define another method here
+            pass
+
+        instance = Sub()                                 # Return instance with lister's __str__
+        print(instance)                                  # Run mixed-in __str__ (or via str(x))
+        if sept: print('-' * 80)
+
+def testByNames(modname, classname, sept=False):
+    modobject = importlib.import_module(modname)         # Import by namestring
+    listerclass = getattr(modobject, classname)          # Fetch attr by namestring
+    tester(listerclass, sept)
+
+if __name__ == '__main__':
+    testByNames('listinstance', 'ListInstance', True)    # Test all three here
+    testByNames('listinherited', 'ListInherited', True)
+    testByNames('listtree', 'ListTree', False)
+```
+
+
+
+```python
+c:\code> python listinstance.py
+<Instance of Sub, address 43256968:
+data1=spam
+data2=eggs
+data3=42
+>
+c:\code> python testmixin.py
+<Instance of Sub, address 43977584:
+data1=spam
+data2=eggs
+data3=42
+```
+
+
+
+##### 使用`dir`列出继承的属性
+
 
 
 ### 31.9 与设计相关的其他话题
