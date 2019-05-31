@@ -4012,6 +4012,100 @@ data3=42
 
 ##### 使用`dir`列出继承的属性
 
+使用内置函数`dir`扩展该类以显示从一个实例可以访问的所有属性：
+
+```python
+#!python
+# File listinherited.py (2.X + 3.X)
+
+class ListInherited:
+    """
+    Use dir() to collect both instance attrs and names inherited from
+    its classes; Python 3.X shows more names than 2.X because of the
+    implied object superclass in the new-style class model; getattr()
+    Multiple Inheritance: “Mix-in” Classes | 963
+    fetches inherited names not in self.__dict__; use __str__, not
+    __repr__, or else this loops when printing bound methods!
+    """
+    def __attrnames(self):
+        result = ''
+        for attr in dir(self): # Instance dir()
+            if attr[:2] == '__' and attr[-2:] == '__': # Skip internals
+                result += '\t%s\n' % attr
+            else:
+                result += '\t%s=%s\n' % (attr, getattr(self, attr))
+        return result
+
+    def __str__(self):
+        return '<Instance of %s, address %s:\n%s>' % (
+                        self.__class__.__name__,         # My class's name
+                        id(self),                        # My address
+                        self.__attrnames())              # name=value list
+
+if __name__ == '__main__':
+    import testmixin
+    testmixin.tester(ListInherited)
+```
+
+##### 列出类树中每个对象的属性
+
+
+
+```python
+#!python
+# File listtree.py (2.X + 3.X)
+class ListTree:
+"""
+Mix-in that returns an __str__ trace of the entire class tree and all
+966 | Chapter 31: Designing with Classes
+its objects' attrs at and above self; run by print(), str() returns
+constructed string; uses __X attr names to avoid impacting clients;
+recurses to superclasses explicitly, uses str.format() for clarity;
+"""
+    def __attrnames(self, obj, indent):
+        spaces = ' ' * (indent + 1)
+        result = ''
+        for attr in sorted(obj.__dict__):
+            if attr.startswith('__') and attr.endswith('__'):
+                result += spaces + '{0}\n'.format(attr)
+            else:
+                result += spaces + '{0}={1}\n'.format(attr, getattr(obj, attr))
+        return result
+
+    def __listclass(self, aClass, indent):
+        dots = '.' * indent
+        if aClass in self.__visited:
+            return '\n{0}<Class {1}:, address {2}: (see above)>\n'.format(
+                            dots,
+                            aClass.__name__,
+                            id(aClass))
+        else:
+            self.__visited[aClass] = True
+            here = self.__attrnames(aClass, indent)
+            above = ''
+            for super in aClass.__bases__:
+                above += self.__listclass(super, indent+4)
+            return '\n{0}<Class {1}, address {2}:\n{3}{4}{5}>\n'.format(
+                            dots,
+                            aClass.__name__,
+                            id(aClass),
+                            here, above,
+                            dots)
+        
+    def __str__(self):
+        self.__visited = {}
+        here = self.__attrnames(self, 0)
+        above = self.__listclass(self.__class__, 4)
+        return '<Instance of {0}, address {1}:\n{2}{3}>'.format(
+                        self.__class__.__name__,
+                        id(self),
+                        here, above)
+
+if __name__ == '__main__':
+    import testmixin
+    testmixin.tester(ListTree)
+```
+
 
 
 ### 31.9 与设计相关的其他话题
