@@ -4127,3 +4127,189 @@ if __name__ == '__main__':
 
 ## 第32章 类的高级话题
 
+### 32.1 扩展内置类型
+
+除了实现新的种类的对象以外，类偶尔也用于扩展Python的内置类型的功能，从而支持更另类的数据结构。
+
+#### 通过嵌入扩展类型
+
+下例中，类`Set`包装了列表，并附加的集合运算。
+
+```python
+class Set:
+    def __init__(self, value = []): # Constructor
+        self.data = [] # Manages a list
+        self.concat(value)
+
+    def intersect(self, other): # other is any sequence
+        res = [] # self is the subject
+        for x in self.data:
+            if x in other: # Pick common items
+                res.append(x)
+        return Set(res) # Return a new Set
+
+    def union(self, other): # other is any sequence
+        res = self.data[:] # Copy of my list
+        for x in other: # Add items in other
+            if not x in res:
+                res.append(x)
+        return Set(res)
+
+    def concat(self, value): # value: list, Set...
+        for x in value: # Removes duplicates
+            if not x in self.data:
+                self.data.append(x)
+
+    def __len__(self): return len(self.data)                  # len(self), if self
+    def __getitem__(self, key): return self.data[key]         # self[i], self[i:j]
+    def __and__(self, other): return self.intersect(other)    # self & other
+    def __or__(self, other): return self.union(other)         # self | other
+    def __repr__(self): return 'Set:' + repr(self.data)       # print(self),...
+    def __iter__(self): return iter(self.data)                # for x in self,...
+```
+
+要使用这个类，我们传入列表，并创建实例，便可使用类的方法对传入列表进行操作：
+
+```python
+from setwrapper import Set
+x = Set([1, 3, 5, 7])
+print(x.union(Set([1, 4, 7]))) # prints Set:[1, 3, 5, 7, 4]
+print(x | Set([1, 4, 6])) # prints Set:[1, 3, 5, 7, 4, 6]
+```
+
+重载索引运算让类`Set`的实例可以充当真正的列表。
+
+#### 通过子类扩展类型
+
+从Python 2.2起，所有内置类型都能直接创建子类。这使我们可以通过用户定义的`class`语句，定制或扩展内置类型的行为。
+
+下例中，我们定制自己的列表子类，重载了索引运算方法`__getitem__`，把索引`1`到`N`映射为实际的`0`到`N-1`，使其偏移值从1开始，而不是默认的0：
+
+```python
+# typesubclass.py
+# Subclass built-in list type/class
+# Map 1..N to 0..N-1; call back to built-in version.
+class MyList(list):
+    def __getitem__(self, offset):
+        print('(indexing %s at %s)' % (self, offset))
+        return list.__getitem__(self, offset - 1)
+    
+if __name__ == '__main__':
+    print(list('abc'))
+    x = MyList('abc')             # __init__ inherited from list
+    print(x)                      # __repr__ inherited from list
+    
+    print(x[1])                   # MyList.__getitem__
+    print(x[3])                   # Customizes list superclass method
+    
+    x.append('spam'); print(x)    # Attributes from list superclass
+    x.reverse(); print(x)
+```
+
+运行结果为：
+
+```python
+% python typesubclass.py
+['a', 'b', 'c']
+['a', 'b', 'c']
+(indexing ['a', 'b', 'c'] at 1)
+a
+(indexing ['a', 'b', 'c'] at 3)
+c
+['a', 'b', 'c', 'spam']
+['spam', 'c', 'b', 'a']
+```
+
+下面的类位于文件`setsubclass.py`内，通过继承`list`来扩展方法和运算符：
+
+```python
+from __future__ import print_function    # 2.X compatibility
+
+class Set(list):
+    def __init__(self, value = []):      # Constructor
+        list.__init__([])                # Customizes list
+        self.concat(value)               # Copies mutable defaults
+
+    def intersect(self, other):          # other is any sequence
+        res = []                         # self is the subject
+        for x in self:
+            if x in other:               # Pick common items
+                res.append(x)
+        return Set(res)                  # Return a new Set
+
+    def union(self, other):              # other is any sequence
+        res = Set(self)                  # Copy me and my list
+        res.concat(other)
+        return res
+
+    def concat(self, value):             # value: list, Set, etc.
+        for x in value:                  # Removes duplicates
+            if not x in self:
+                self.append(x)
+
+    def __and__(self, other): return self.intersect(other)
+    def __or__(self, other): return self.union(other)
+    def __repr__(self): return 'Set:' + list.__repr__(self)
+    
+if __name__ == '__main__':
+    x = Set([1,3,5,7])
+    y = Set([2,1,4,5,6])
+    print(x, y, len(x))
+    print(x.intersect(y), y.union(x))
+    print(x & y, x | y)
+    x.reverse(); print(x)
+```
+
+测试代码运行结果：
+```python
+% python setsubclass.py
+Set:[1, 3, 5, 7] Set:[2, 1, 4, 5, 6] 4
+Set:[1, 5] Set:[2, 1, 4, 5, 6, 3, 7]
+Set:[1, 5] Set:[1, 3, 5, 7, 2, 4, 6]
+Set:[7, 5, 3, 1]
+```
+
+
+
+### 32.2 新式类
+
+自从Python 2.2起，Python引入新式（new-style）类。
+
+**对于Python 3.0来说，所有的类都是新式类，所有的类都继承自`object`，不管这种继承是显式的还是隐式的；并且，所有的对象都是`object`的实例。**
+
+**在Python 2.X中，类必须显式地继承自`object`（或其他内置类型）才被认为是新式的，并以此来获得所有新式的行为。没有显式继承自`object`的类是经典（classic）类。**
+
+### 32.3 新式类变化
+
+新式类在几个方面不同于经典类：
+
+- 类和类型合并：现在类型就是类。
+
+- 继承搜索顺序：多继承的钻石模式有一种略微不同的搜索顺序，总体而言，它们可能先横向搜索在纵向搜索，并且先广度优先搜索，再深度优先搜索。
+
+- 针对内置函数的属性获取
+
+- 新的高级功能
+
+    
+
+
+### 32.4 新式类的扩展
+
+
+### 32.5 静态方法和类方法
+
+
+### 32.6 装饰器和元类：Part 1
+
+
+### 32.7 内置函数`super`
+
+
+### 32.8 类的陷阱
+
+
+
+
+
+
