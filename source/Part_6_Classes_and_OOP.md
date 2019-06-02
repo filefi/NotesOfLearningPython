@@ -4283,16 +4283,283 @@ Set:[7, 5, 3, 1]
 
 新式类在几个方面不同于经典类：
 
-- 类和类型合并：现在类型就是类。
+- 针对内置函数的属性获取：对于通过显式变量名访问的属性，通用属性拦截方法`__getattr__`和`__getattribute__`依然正常运作；但对于通过内置运算操作隐式获取的属性，则不再运行。对于只在内置环境中的`__X__`运算符重载方法名，它们不再被调用。对于这种变量名的搜索从类开始，而不是从实例开始。如果被包装的对象实现了运算符重载，则会破坏充当另一个对象接口的代理的对象，或使其复杂化。为了在新式类中进行不同的内置调度（dispatch），必须重新定义这些方法。
 
-- 继承搜索顺序：多继承的钻石模式有一种略微不同的搜索顺序，总体而言，它们可能先横向搜索在纵向搜索，并且先广度优先搜索，再深度优先搜索。
+- 类和类型合并：现在，类就是类型，类型就是类。这两者基本上是等价的。
 
-- 针对内置函数的属性获取
+- `object`是默认的根类：无论是否显式地在类树中自定义根类，所有新式类都自动地继承自`object`，它自带了一小部分默认运算符重载方法（如`__repr__`）。
 
-- 新的高级功能
+- 继承搜索顺序：多继承的钻石模式有一种略微不同的搜索顺序，总体而言，它们可能先横向搜索在纵向搜索，并且先广度优先搜索，再深度优先搜索。这种属性搜索顺序（称为MRO）可以用新式类中一个新的`__mro__`属性来跟踪。新的搜索顺序主要仅适用于钻石类树，尽管新模型的隐含对象根本身在所有多继承树中形成钻石。 依赖于先前顺序的代码将不起作用。
 
-    
+- 继承算法（第40章内容）：用于在新式类中继承的算法比经典类的深度优先模型更加复杂，其中包括装饰器，元类，和内置函数等特殊情况。
 
+- 新的高级功能：新式类有一系列新的类工具，包括`slots`，特性（properties），描述符（descriptors），`super`，以及`__getattribute__`方法。这些工具中的大多数都有非常特定的工具构建目的。它们的使用也影响或破坏了现存的代码。例如，`slots`有时会完全阻止实例命名空间字典的创建，而通用属性处理器（handler）可能要求不同的代码编写。
+
+
+#### 内置运算的属性获取跳过实例
+在新式类（Python 3.X中的所有类）中，通用的实例属性拦截方法`__get__`和`__getattribute__`不再被`__X__`运算符重载方法名的内置运算所调用。这意味着，这些变量名的搜索是从类开始的，而不是从实例开始的。然而，通过显式变量名访问的属性还是会通过这些方法进行路由，即使他们是`__X__`变量名。
+
+更正式地说，如果一个类定义了`__getitem__`索引重载方法，而`X`是这个类的一个实例，那么像`X[I]`这样的索引表达式基本上等同于经典类的`X.__getitem__(I)`；但不等同于新式类的`type(X).__getitem__(X, I)`。后者在类中开始搜索，因此跳过了实例的`__getattr__`步骤，以获取未定义的变量名。
+
+技术上来说，像`X[I]`这样的对内置运算的方法查找使用普通的、从类的层级（level）开始的继承，并且只检查由`X`派生的所有类的命名空间字典。这在我们的 *元类* 模型中非常重要。然而，实例则被内置搜索忽略。
+
+##### Why the lookup change?
+第五版，暂略
+
+##### Implications for attribute interception
+第五版，暂略
+
+##### Proxy coding requirements
+第五版，暂略
+
+##### 更多细节
+第五版，暂略
+
+
+#### 类型模式变化
+对于新式类，类型就是类，类就是类型。它们之间完全没有区别。实际上，对于新式类，内置类型和用户自定义类型之间也完全没有区别。
+
+Python 3.X中的所有类都自动是新式类，即使没有显式的超类。
+```python
+C:\code> c:\python33\python
+>>> class C: pass
+>>> I = C()                                     # All classes are new-style in 3.X
+>>> type(I), I.__class__                        # Type of instance is class it's made from
+(<class '__main__.C'>, <class '__main__.C'>)
+>>> type(C), C.__class__                        # Class is a type, and type is a class
+(<class 'type'>, <class 'type'>)
+>>> type([1, 2, 3]), [1, 2, 3].__class__
+(<class 'list'>, <class 'list'>)
+>>> type(list), list.__class__                  # Classes and built-in types work the same
+(<class 'type'>, <class 'type'>)
+```
+
+从技术上讲，每个类都有一个 ***元类*** 生成。**元类** 要么是`type`自身，要么是它自定义来扩展或管理生成的类的一个子类。除了影响到进行类型测试的代码，对于工具开发者来说，它是一个重要的钩子。
+
+##### 类型测试的隐含意义
+
+在Python 3.X中，类现在就是类型，并且一个实例的类型是该实例的类，类实例的类型可以进行直接而有意义地比较，并且以与内置类型对象同样的方式进行。
+
+```python
+C:\code> c:\python33\python
+>>> class C: pass
+>>> class D: pass
+>>> c, d = C(), D()
+>>> type(c) == type(d) # 3.X: compares the instances' classes
+False
+>>> type(c), type(d)
+(<class '__main__.C'>, <class '__main__.D'>)
+>>> c.__class__, d.__class__
+(<class '__main__.C'>, <class '__main__.D'>)
+>>> c1, c2 = C(), C()
+>>> type(c1) == type(c2)
+True
+```
+
+而对于Python 2.X中的经典类，比较实例类型几乎是无用的，因为所有的实例都具有相同的“实例”类型：
+
+```python
+C:\code> c:\python27\python
+>>> class C: pass
+>>> class D: pass
+>>> c, d = C(), D()
+>>> type(c) == type(d) # 2.X: all instances are same type!
+True
+>>> c.__class__ == d.__class__ # Compare classes explicitly if needed
+False
+>>> type(c), type(d)
+(<type 'instance'>, <type 'instance'>)
+>>> c.__class__, d.__class__
+(<class __main__.C at 0x024585A0>, <class __main__.D at 0x024588D0>)
+```
+
+
+
+
+#### 所有类派生自`object`
+
+由于所有新式类都隐式地或显式地派生自（继承自）类`object`，所以每个对象都派生自内置类`object`，不管是直接地或通过一个超类。
+
+```python
+>>> class C: pass       # For new-style classes
+>>> X = C()
+>>> type(X), type(C)    # 新式类的实例的类型是该实例派生自的那个类
+(<class '__main__.C'>, <class 'type'>)
+```
+
+实例和类都派生自内置的类`object`，因此，每个类都有一个显式或隐式的超类：
+
+```python
+>>> isinstance(X, object)
+True
+>>> isinstance(C, object) # Classes always inherit from object
+True
+```
+
+对于列表和字符串等内置类型来说也是如此，它们的实例也派生自`object`：
+
+```python
+>>> type('spam'), type(str)
+(<class 'str'>, <class 'type'>)
+>>> isinstance('spam', object) # Same for built-in types (classes)
+True
+>>> isinstance(str, object)
+True
+```
+
+实际上，类型自身也派生自`object`，并且`object`派生自`type`，即便二者是不同的对象——一个循环的关系覆盖了对象模型，并由此导致了这样一个事实：类型是生成类的类。
+
+```python
+>>> type(type)                  # All classes are types, and vice versa
+<class 'type'>
+>>> type(object)
+<class 'type'>
+>>> isinstance(type, object)    # All classes derive from object, even type
+True
+>>> isinstance(object, type)    # Types make classes, and type is a class
+True
+>>> type is object              # type和object并不是同一个对象
+False
+```
+
+##### 方法默认值的隐含意义
+
+首先，这意味着我们有时必须知道新式类中显式的或隐式的`object`根类带来的方法的默认值：
+
+```python
+c:\code> py −2
+>>> dir(object)
+['__class__', '__delattr__', '__doc__', '__format__', '__getattribute__', '__hash__'
+, '__init__', '__new__', '__reduce__', '__reduce_ex__', '__repr__', '__setattr__', '
+__sizeof__', '__str__', '__subclasshook__']
+>>> class C: pass
+>>> C.__bases__             # Classic classes do not inherit from object
+()
+>>> X = C()
+>>> X.__repr__              # 没有从object继承默认属性__repr__
+AttributeError: C instance has no attribute '__repr__'
+>>> class C(object): pass   # New-style classes inherit object defaults
+>>> C.__bases__
+(<type 'object'>,)
+>>> X = C()
+>>> X.__repr__              # 从object继承默认属性__repr__
+<method-wrapper '__repr__' of C object at 0x00000000020B5978>
+```
+
+```python
+c:\code> py −3
+>>> class C: pass           # This means all classes get defaults in 3.X
+>>> C.__bases__
+(<class 'object'>,)
+>>> C().__repr__
+<method-wrapper '__repr__' of C object at 0x0000000002955630>
+```
+
+
+
+#### 钻石继承的变化
+
+新式类中最明显的变化就是，对于所谓的多重继承树的钻石模式（diamond pattern）的继承（即，有一个以上的超类会通往同一个更高的超类）处理方式有点不同。
+
+- ***经典类：DFLR*** 
+  - 继承搜索路径是严格的深度优先，然后由左至右。
+- ***新式类：MRO*** 
+  - 在钻石情况下，继承搜索路径是广度优先的。即，搜索过程先水平进行，然后向上移动。
+
+因为新式类的这种变化，较低超类可以重载较高超类的属性，无论它们混入的是哪种多继承树。此外，当从多个子类访问超类的时候，新式搜索规则避免重复访问同一超类。
+
+##### 钻石继承树的含义
+
+下面是经典类构成的简单钻石继承模式的例子：
+
+```python
+>>> class A: attr = 1 # Classic (Python 2.X)
+>>> class B(A): pass # B and C both lead to A
+>>> class C(A): attr = 2
+>>> class D(B, C): pass # Tries A before C
+>>> x = D()
+>>> x.attr # Searches x, D, B, A
+1
+```
+
+由此可见，对经典类来说，继承搜索是先往上搜索到最高，然后返回再往右搜索：Python会先搜索`D`、`B`、`A`，然后才是`C`（但是，当`attr`在`A`中找到时，就会停止搜索）。
+
+对于新式类以及Python 3.X中的所有类，搜索顺序是不同的：Python会先搜索`D`、`B`、`C`，最后才是`A`。在下例中，则会停在`C`处：
+
+```python
+>>> class A(object): attr = 1 # New-style ("object" not required in 3.X)
+>>> class B(A): pass
+>>> class C(A): attr = 2
+>>> class D(B, C): pass       # Tries C before A
+>>> x = D()
+>>> x.attr                    # Searches x, D, B, C
+2
+```
+
+##### 显式的冲突解决
+
+如果想对搜索流程有更多的控制，可以在树中任何地方强迫属性的选择：通过赋值或者在类混合出指出你想要的变量名。
+
+```python
+>>> class A: attr = 1            # Classic
+>>> class B(A): pass
+>>> class C(A): attr = 2
+>>> class D(B, C): attr = C.attr # <== 在D中为属性赋值，使其选择C.attr
+>>> x = D()
+>>> x.attr                       # Works like new-style (all 3.X)
+2
+```
+
+新式类也能选择类混合处以上的属性来模拟以上操作：
+
+```python
+>>> class A(object): attr = 1     # New-style
+>>> class B(A): pass
+>>> class C(A): attr = 2
+>>> class D(B, C): attr = B.attr  # <==在D中为属性赋值，使其选择A.attr
+>>> x = D()
+>>> x.attr                        # Works like classic (default 2.X)
+1
+```
+
+这种方式也适用于方法：
+
+```python
+>>> class A:
+        def meth(s): print('A.meth')
+>>> class C(A):
+        def meth(s): print('C.meth')
+>>> class B(A):
+        pass
+>>> class D(B, C): pass               # Use default search order
+>>> x = D()                           # Will vary per class type
+>>> x.meth()                          # Defaults to classic order in 2.X
+A.meth
+>>> class D(B, C): meth = C.meth      # <== Pick C's method: new-style (and 3.X)
+>>> x = D()
+>>> x.meth()
+C.meth
+>>> class D(B, C): meth = B.meth      # <== Pick B's method: classic
+>>> x = D()
+>>> x.meth()
+A.meth
+```
+
+##### 搜索顺序变化的范围
+
+总而言之，默认情况下，钻石模式对于经典类和新式类进行不同的搜索，并且这是一个非向后兼容的变化。
+
+由于隐式的`object`超类在Python 3.X中的每个类之上，也就是说，在新式类中，`object`自动扮演了前面例子中类`A`的角色；所以如今多继承的每个例子都展示了钻石模式。
+
+
+#### MRO的更多细节：方法解析顺序
+第五版，暂略
+
+##### MRO算法
+第五版，暂略
+
+##### 跟踪MRO
+第五版，暂略
 
 ### 32.4 新式类的扩展
 
