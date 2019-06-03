@@ -4643,8 +4643,8 @@ AttributeError: a
 在这个例子中，两种存储机制都使用了。`__dict__`限制我们将slots属性（`a`,`b`）作为实例数据来对待，但通用工具（如`getattr`）仍然允许将两种存储格式当作一组单独的属性来处理：
 
 ```python
->>> X.__dict__ # Some objects have both __dict__ and slot names
-{'d': 4} # getattr() can fetch either type of attr
+>>> X.__dict__           # Some objects have both __dict__ and slot names
+{'d': 4}                 # getattr() can fetch either type of attr
 >>> X.__slots__
 ['a', 'b', '__dict__']
 >>> getattr(X, 'a'), getattr(X, 'c'), getattr(X, 'd') # Fetches all 3 forms
@@ -4660,6 +4660,48 @@ d => 4
 a => 1 # Less wrong...
 b => 2
 __dict__ => {'d': 4}
+```
+
+##### 超类中的多个`__slots__`列表
+
+如果类树中的多个类都有自己的`__slots__`属性，通用的程序必须针对列出的属性开发其他的策略，例如，把slot名称划分为类的属性，而不是实例的属性。
+
+slot声明可能出现在一个类树中的多个类中，但是，它们受到一些限制：
+
+- 如果一个子类继承自一个没有`__slots__`的超类，那么超类的`__dict__`属性总是可以访问的，使得子类中的一个`__slots__`无意义。
+- 如果一个类定义了与超类相同的slot名称，超类slot定义的名称版本只有通过直接从超类获取其描述符才能访问。
+- 由于一个`__slots__`声明的含义受到它出现其中的类的限制，所以子类将有一个`__dict__`，除非它们也定义了一个`__slots__`。
+- 通常从列出实例属性这方面来讲，多类中的slots可能需要手动类树爬升、`dir`用法，或者把slot名称当作不同的名称领域的策略。
+
+```python
+>>> class E:
+        __slots__ = ['c', 'd'] # Superclass has slots
+>>> class D(E):
+        __slots__ = ['a', '__dict__'] # But so does its subclass
+>>> X = D()
+>>> X.a = 1; X.b = 2; X.c = 3 # The instance is the union (slots: a, c)
+>>> X.a, X.c
+(1, 3)
+```
+
+
+检查继承的slots列表不会获取在高层级类树定义的slots：
+```python
+>>> E.__slots__ # But slots are not concatenated
+['c', 'd']
+>>> D.__slots__
+['a', '__dict__']
+>>> X.__slots__ # Instance inherits *lowest* __slots__
+['a', '__dict__']
+>>> X.__dict__ # And has its own an attr dict
+{'b': 2}
+>>> for attr in list(getattr(X, '__dict__', [])) + getattr(X, '__slots__', []):
+        print(attr, '=>', getattr(X, attr))
+b => 2 # Other superclass slots missed!
+a => 1
+__dict__ => {'b': 2}
+>>> dir(X) # But dir() includes all slot names
+[...many names omitted... 'a', 'b', 'c', 'd']
 ```
 
 
