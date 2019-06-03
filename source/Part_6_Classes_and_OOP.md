@@ -4565,7 +4565,103 @@ A.meth
 
 #### slots：属性声明
 
-通过赋值一系列字符串属性名给特殊的类属性`__slots__`，可以让新式类既能限制类实例将有的合法属性的集合，又能优化内存使用和程序速度。
+通过赋值一系列字符串属性名给特殊的类属性`__slots__`，可以让新式类既能限制类的实例将有的合法属性的集合，又能优化内存使用和程序速度。
+
+##### Slots基础
+
+要使用`__slots__`，在`class`语句顶层内将字符串名称顺序赋值给特殊属性`__slots__`，使得只有`__slots__`列表内的这些变量名可赋值为实例属性。对于不在`__slots__`内的非法属性名做赋值运算，就会检测出来。
+
+```python
+>>> class limiter(object):
+        __slots__ = ['age', 'name', 'job']
+>>> x = limiter()
+>>> x.age # Must assign before use
+AttributeError: age
+>>> x.age = 40 # Looks like instance data
+>>> x.age
+40
+>>> x.ape = 1000 # Illegal: not in __slots__
+AttributeError: 'limiter' object has no attribute 'ape'
+```
+
+##### `__slots__`和命名空间字典
+
+使用`__slots__`时，实例通常没有一个属性字典，Python使用类描述符功能来为实例中的slot属性分配和管理空间。
+
+只有`__slots__`列表中的变量名可以分配给实例，但基于`__slots__`的属性仍然可以使用通用工具通过名称来访问或设置。在Python 3.X中：
+
+```python
+>>> class C:                       # Requires "(object)" in 2.X only
+        __slots__ = ['a', 'b']     # __slots__ means no __dict__ by default
+>>> X = C()
+>>> X.a = 1
+>>> X.a
+1
+>>> X.__dict__
+AttributeError: 'C' object has no attribute '__dict__'
+>>> getattr(X, 'a')
+1
+>>> setattr(X, 'b', 2)     # But getattr() and setattr() still work
+>>> X.b
+2
+>>> 'a' in dir(X)          # And dir() finds slot attributes too
+True
+>>> 'b' in dir(X)
+True
+```
+
+记住，不能给实例赋值一个不在`__slots__`列表中的属性名：
+
+```python
+>>> class D:                      # Use D(object) for same result in 2.X
+        __slots__ = ['a', 'b']
+        def __init__(self):
+            self.d = 4            # Cannot add new names if no __dict__
+>>> X = D()
+AttributeError: 'D' object has no attribute 'd'
+```
+
+为了创建属性命名空间字典，我们仍然可以通过在`__slots__`中包含`__dict__`来容纳额外的属性：
+
+```python
+>>> class D:
+        __slots__ = ['a', 'b', '__dict__']   # Name __dict__ to include one too
+        c = 3                                # Class attrs work normally
+        def __init__(self):
+            self.d = 4                       # d stored in __dict__, a is a slot
+>>> X = D()
+>>> X.d
+4
+>>> X.c
+3
+>>> X.a             # All instance attrs undefined until assigned
+AttributeError: a
+>>> X.a = 1
+>>> X.b = 2
+```
+
+在这个例子中，两种存储机制都使用了。`__dict__`限制我们将slots属性（`a`,`b`）作为实例数据来对待，但通用工具（如`getattr`）仍然允许将两种存储格式当作一组单独的属性来处理：
+
+```python
+>>> X.__dict__ # Some objects have both __dict__ and slot names
+{'d': 4} # getattr() can fetch either type of attr
+>>> X.__slots__
+['a', 'b', '__dict__']
+>>> getattr(X, 'a'), getattr(X, 'c'), getattr(X, 'd') # Fetches all 3 forms
+(1, 3, 4)
+```
+
+然而，想要通用地列出所有实例属性的代码，可能仍然需要考虑两种存储形式：
+
+```python
+>>> for attr in list(getattr(X, '__dict__', [])) + getattr(X, '__slots__', []):
+        print(attr, '=>', getattr(X, attr))
+d => 4
+a => 1 # Less wrong...
+b => 2
+__dict__ => {'d': 4}
+```
+
 
 
 ### 32.5 静态方法和类方法
