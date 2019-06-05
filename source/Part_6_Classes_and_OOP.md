@@ -4679,9 +4679,16 @@ slot声明可能出现在一个类树中的多个类中，但是，它们受到�
 >>> class D(E):
         __slots__ = ['a', '__dict__'] # But so does its subclass
 >>> X = D()
->>> X.a = 1; X.b = 2; X.c = 3 # The instance is the union (slots: a, c)
+>>> X.a = 1; X.b = 2; X.c = 3# The instance is the union (slots: a, c)
 >>> X.a, X.c
 (1, 3)
+>>> X.b
+>>> 2
+>>> X.d=4
+>>> X.d
+>>> 4
+>>> X.__dict__           # 实例属性只有a,c,d；而
+>>> {'b': 2}
 ```
 
 
@@ -4704,9 +4711,159 @@ __dict__ => {'b': 2}
 [...many names omitted... 'a', 'b', 'c', 'd']
 ```
 
+##### Handling slots and other “virtual” attributes generically
+第五版，暂略
 
+##### Slot usage rules
+
+第五版，暂略
+
+##### Example impacts of slots: ListTree and mapattrs
+
+第五版，暂略
+
+##### What about slots speed?
+
+第五版，暂略
+
+#### 特性（Properties）：属性访问器（Attribute Accessors）
+
+***特性*** （properties）为新式类提供了另一种方式来定义自动调用的方法（method），来读取或赋值实例属性。这个功能是`__getattr__`和`__setattr__`重载方法的替代方法。
+
+特性和slots都是基于属性描述器（Attribute descriptor）的高级概念。
+
+##### 特性（properties）基础
+
+特性是一种对象，赋值给类属性名称。
+
+通过调用内置函数`property`，并传入3个访问器方法（分别对应get，set和del操作）和1个可选的文档字符串作为参数来生成一个特性（property）。如果任何参数被以`None`传入或省略，则不支持该项操作。
+
+特性一般都是在`class`语句顶层赋值（例如`name = property()`），以及一个用来自动完成该步骤的特殊`@`语法。这样当赋值时，以对象属性（如`obj.name`）方式对类特性名本身进行的访问，自动地被路由到传入内置函数`property`调用的其中一个访问器方法（accessor method）。
+
+例如，`__getattr__`方法可让类拦截未定义属性的引用：
+
+```python
+>>> class operators:
+        def __getattr__(self, name):
+            if name == 'age':
+                return 40
+            else:
+                raise AttributeError(name)
+>>> x = operators()
+>>> x.age              # Runs __getattr__
+40
+>>> x.name             # Runs __getattr__
+AttributeError: name
+```
+
+下面是改用特性来编写的相同例子：
+
+```python
+>>> class properties(object):                    # Need object in 2.X for setters
+        def getage(self):
+            return 40
+        age = property(getage, None, None, None) # (get, set, del, docs), or use @
+>>> x = properties()
+>>> x.age # Runs getage
+40
+>>> x.name # Normal fetch
+AttributeError: 'properties' object has no attribute 'name'
+```
+
+增加属性赋值的支持时，特性的代码比使用`__getattr__`和`__setattr__`重载方法更少：
+
+```python
+>>> class properties(object):                # Need object in 2.X for setters
+        def getage(self):
+            return 40
+        def setage(self, value):
+            print('set age: %s' % value)
+            self._age = value
+        age = property(getage, setage, None, None)
+>>> x = properties()
+>>> x.age                    # Runs getage
+40
+>>> x.age = 42               # Runs setage
+set age: 42
+>>> x._age                   # Normal fetch: no getage call
+42
+>>> x.age                    # Runs getage
+40
+>>> x.job = 'trainer'        # Normal assign: no setage call
+>>> x.job                    # Normal fetch: no getage call
+'trainer'
+```
+
+基于运算符重载的与上例中等价的类会引发额外的方法调用，用于对未被管理的属性进行赋值，并且需要通过属性字典路由属性赋值来避免循环；或者，对于新式类，对象超类的`__setattr__`以更好地支持“虚拟”属性，如：在其他类中编码的slots和特性：
+
+```python
+>>> class operators:
+        def __getattr__(self, name):             # On undefined reference
+            if name == 'age':
+                return 40
+            else:
+                raise AttributeError(name)
+        def __setattr__(self, name, value):      # On all assignments
+            print('set: %s %s' % (name, value))
+            if name == 'age':
+                self.__dict__['_age'] = value    # Or object.__setattr__()
+            else:
+                self.__dict__[name] = value
+>>> x = operators()
+>>> x.age                                        # Runs __getattr__
+40
+>>> x.age = 41                                   # Runs __setattr__
+set: age 41
+>>> x._age                                       # Defined: no __getattr__ call
+41
+>>> x.age                                        # Runs __getattr__
+40
+>>> x.job = 'trainer'                            # Runs __setattr__ again
+set: job trainer
+>>> x.job                                        # Defined: no __getattr__ call
+'trainer'
+Properties seem like
+```
+
+还可以使用`@`符号函数装饰器语法来编写特性：
+
+```python
+class properties(object):
+    @property            # Coding properties with decorators: ahead
+    def age(self):
+        ...
+    @age.setter
+    def age(self, value):
+        ...
+```
+
+#### `__getattribute__`和描述符（descriptors）：属性工具
+
+第五版，暂略
+
+```python
+>>> class AgeDesc(object):
+        def __get__(self, instance, owner): return 40
+        def __set__(self, instance, value): instance._age = value
+>>> class descriptors(object):
+        age = AgeDesc()
+>>> x = descriptors()
+>>> x.age        # Runs AgeDesc.__get__
+40
+>>> x.age = 42   # Runs AgeDesc.__set__
+>>> x._age       # Normal fetch: no AgeDesc call
+42
+```
+
+
+
+#### 其他关于类的变化和扩展
+
+第五版，暂略
 
 ### 32.5 静态方法和类方法
+
+
 
 
 ### 32.6 装饰器和元类：Part 1
