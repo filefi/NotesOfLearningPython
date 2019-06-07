@@ -4878,13 +4878,116 @@ class properties(object):
 
 #### Python 2.X和3.X中的静态方法
 
+Python 3.X对待直接从类中获取的方法与2.X有所不同：
 
+- 当通过实例获得一个方法，Python 2.X和3.X都产生一个**绑定方法**。
+- 在Python 2.X中，从一个类获取一个方法会产生一个**未绑定方法**，没有手动传递一个实例则不会调用该未绑定方法。
+- 在Python 3.X中，从一个类获取一个方法会产生一个**简单函数**，没有给出实例也可以常规地调用该简单函数。
+
+这导致的效果是：
+
+- 在Python 2.X中，我们必须总是把一个方法声明为静态的，从而不带一个实例而调用它，不管是通过一个类或一个实例调用它。
+- 在Python 3.X中，如果方法只通过一个类调用的话，我们就不需要将这样的方法声明为静态；但是，要通过一个实例调用它，我们必须这么做。
+
+下面的类`Spam`尝试实现使用类属性去计算从一个类产生了多少实例：
+
+```python
+class Spam:
+    numInstances = 0
+    def __init__(self):
+        Spam.numInstances = Spam.numInstances + 1
+    def printNumInstances():
+        print("Number of instances created: %s" % Spam.numInstances)
+```
+
+在Python 2.X中，通过类和实例调用无`self`参数的方法都将失败：
+
+```python
+C:\code> c:\python27\python
+>>> from spam import Spam
+>>> a = Spam()              # Cannot call unbound class methods in 2.X
+>>> b = Spam()              # Methods expect a self object by default
+>>> c = Spam()
+>>> Spam.printNumInstances()
+TypeError: unbound method printNumInstances() must be called with Spam instance
+as first argument (got nothing instead)
+>>> a.printNumInstances()
+TypeError: printNumInstances() takes no arguments (1 given)
+```
+
+在Python 3.X中，通过类调用一个无`self`参数的方法是有效的，但从实例调用则也是失效的：
+
+```python
+C:\code> c:\python33\python
+>>> from spam import Spam
+>>> a = Spam()                    # Can call functions in class in 3.X
+>>> b = Spam()                    # Calls through instances still pass a self
+>>> c = Spam()
+>>> Spam.printNumInstances()      # Differs in 3.X
+Number of instances created: 3
+>>> a.printNumInstances()
+TypeError: printNumInstances() takes 0 positional arguments but 1 was given
+```
+
+如果在Python 3.X中坚持只通过类调用无`self`方法，那么这已经实现了静态方法特性。然而，要允许非`self`方法在Python 2.X中通过类调用，或者在Python 2.X和3.X中通过实例调用，则还需要采用其他的设计。
 
 #### 静态方法的替代方案
 
-
+略
 
 #### 使用静态方法和类方法
+
+在类中调用内置函数`staticmethod`和`classmethod`使得可以使用静态方法和类方法来编写类。这两个内置函数把方法标记为特殊的，例如，如果是静态方法就不需要实例，如果是类方法就需要一个类作为参数：
+
+```python
+# File bothmethods.py
+
+class Methods:
+    def imeth(self, x):            # Normal instance method: passed a self
+        print([self, x])
+    def smeth(x):                  # Static: no instance passed
+        print([x])
+    def cmeth(cls, x):             # Class: gets class, not instance
+        print([cls, x])
+    smeth = staticmethod(smeth)    # Make smeth a static method (or @: ahead)
+    cmeth = classmethod(cmeth)     # Make cmeth a class method (or @: ahead)
+```
+
+注意：如上最后两行代码，在`class`语句中，通过赋值语句使调用`staticmethod`和`classmethod`的返回结果覆盖之前`def`语句所做的属性赋值。
+
+作为替代方法，特殊的`@`语法在这里也能正常工作，就像它对特性（properties）所做的一样。
+
+**从技术上讲，Python现在支持三种类相关的方法：*实例方法*，*静态方法*，*类方法*。**
+
+**此外，Python 3.X允许类中的简单函数扮演静态方法的角色，而不需要额外的协议，从而扩展了这一模型。**
+
+- **实例方法** ：必须传入一个实例对象。通过实例调用时，Python自动把实例传给第一个参数；类调用时，必须手动传入实例。
+
+```python
+>>> from bothmethods import Methods  # Normal instance methods
+>>> obj = Methods()                  # Callable through instance or class
+>>> obj.imeth(1)
+[<bothmethods.Methods object at 0x0000000002A15710>, 1]
+>>> Methods.imeth(obj, 2)
+[<bothmethods.Methods object at 0x0000000002A15710>, 2]
+```
+
+- **静态方法** ：通过`staticmethod`函数，不需要传入额外的对象。可以从类调用，也可以从实例调用。
+
+```python
+>>> Methods.smeth(3)       # Static method: call through class
+[3]                        # No instance passed or expected
+>>> obj.smeth(4)           # Static method: call through instance
+[4]                        # Instance not passed
+```
+
+- **类方法** ：通过`classmethod`函数，和在元类中继承，类方法自动把类（而不是实例）传入类方法的第一个参数，不管它是通过一个类或一个实例调用。
+```python
+>>> Methods.cmeth(5)                 # Class method: call through class
+[<class 'bothmethods.Methods'>, 5]   # Becomes cmeth(Methods, 5)
+>>> obj.cmeth(6)                     # Class method: call through instance
+[<class 'bothmethods.Methods'>, 6]   # Becomes cmeth(Methods, 6)
+```
 
 
 
