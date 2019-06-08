@@ -4957,6 +4957,22 @@ class Methods:
 
 作为替代方法，特殊的`@`语法在这里也能正常工作，就像它对特性（properties）所做的一样。
 
+```python
+class Methods:
+    def imeth(self, x):            # Normal instance method: passed a self
+        print([self, x])
+
+    @staticmethod
+    def smeth(x):                  # Static: no instance passed
+        print([x])
+
+    @classmethod
+    def cmeth(cls, x):             # Class: gets class, not instance
+        print([cls, x])
+```
+
+
+
 **从技术上讲，Python现在支持三种类相关的方法：*实例方法*，*静态方法*，*类方法*。**
 
 **此外，Python 3.X允许类中的简单函数扮演静态方法的角色，而不需要额外的协议，从而扩展了这一模型。**
@@ -4993,17 +5009,321 @@ class Methods:
 
 #### 使用静态方法统计实例
 
+使用内置函数`staticmethod`把类中的方法标记为特殊的静态方法，以便不会自动传递一个实例：
+
+```python
+# spam_static.py
+
+class Spam:
+    numInstances = 0                # Use static method for class data
+    def __init__(self):
+        Spam.numInstances += 1
+    def printNumInstances():
+        print("Number of instances: %s" % Spam.numInstances)
+    printNumInstances = staticmethod(printNumInstances)
+```
+
+我们的代码现在允许在Python 2.X和3.X中通过类或任何实例来调用无`self`方法：
+
+```python
+>>> from spam_static import Spam
+>>> a = Spam()
+>>> b = Spam()
+>>> c = Spam()
+>>> Spam.printNumInstances() # Call as simple function
+Number of instances: 3
+>>> a.printNumInstances() # Instance argument not passed
+Number of instances: 3
+```
+
+这样做把函数名称变成类作用域内的局部变量，而且把函数程序代码移到靠近其使用的地方（位于class语句中），并且允许子类定制静态方法：
+
+```python
+# spam_static.py
+
+class Sub(Spam):
+    def printNumInstances():         # Override a static method
+        print("Extra stuff...")      # But call back to original
+        Spam.printNumInstances()
+    printNumInstances = staticmethod(printNumInstances)
+```
+
+```python
+>>> from spam_static import Spam, Sub
+>>> a = Sub()
+>>> b = Sub()
+>>> a.printNumInstances()      # Call from subclass instance
+Extra stuff...
+Number of instances: 2
+>>> Sub.printNumInstances()    # Call from subclass itself
+Extra stuff...
+Number of instances: 2
+>>> Spam.printNumInstances()   # Call original version
+Number of instances: 2
+```
+
 
 
 #### 使用类方法统计实例
 
+使用内置函数`classmethod`把类中的方法标记为特殊的类方法，来实现和前面静态方法类似的工作：
+
+```python
+class Spam:
+    numInstances = 0 # Use class method instead of static
+    def __init__(self):
+        Spam.numInstances += 1
+    def printNumInstances(cls):
+        print("Number of instances: %s" % cls.numInstances)
+    printNumInstances = classmethod(printNumInstances)
+```
+
+这个类与前面使用静态方法的版本的使用方法类似，但是通过类和实例调用`printNumInstances`方法时，它接受类而不是实例：
+
+```python
+>>> from spam_class import Spam
+>>> a, b = Spam(), Spam()
+>>> a.printNumInstances()        # Passes class to first argument
+Number of instances: 2
+>>> Spam.printNumInstances()     # Also passes class to first argument
+Number of instances: 2
+```
+
+注意，使用类方法的时候，类方法接受的主体的最具体（最底层）的类。
+
+例如，如果对类`Spam`进行子类化，扩展`Spam.printNumInstance`以显示其`cls`参数：
+
+```python
+class Spam:
+    numInstances = 0                                    # Trace class passed in
+    def __init__(self):
+        Spam.numInstances += 1
+    def printNumInstances(cls):
+        print("Number of instances: %s %s" % (cls.numInstances, cls))
+    printNumInstances = classmethod(printNumInstances)
+class Sub(Spam):
+    def printNumInstances(cls):                         # Override a class method
+        print("Extra stuff...", cls)                    # But call back to original
+        Spam.printNumInstances()
+    printNumInstances = classmethod(printNumInstances)
+class Other(Spam): pass                                 # Inherit class method verbatim
+```
+
+无论何时运行一个类方法，最底层的类传入，即便对于没有自己的类方法的子类：
+
+```python
+>>> from spam_class import Spam, Sub, Other
+>>> x = Sub()
+>>> y = Spam()
+>>> x.printNumInstances()                          # Call from subclass instance
+Extra stuff... <class 'spam_class.Sub'>
+Number of instances: 2 <class 'spam_class.Spam'>
+>>> Sub.printNumInstances()                        # Call from subclass itself
+Extra stuff... <class 'spam_class.Sub'>
+Number of instances: 2 <class 'spam_class.Spam'>
+>>> y.printNumInstances()                          # Call from superclass instance
+Number of instances: 2 <class 'spam_class.Spam'>
+>>> z = Other()                                    # Call from lower sub's instance
+>>> z.printNumInstances()
+Number of instances: 3 <class 'spam_class.Other'>
+```
+
+##### 使用类方法统计每个类的实例
+
+实际上，由于类方法总是接收一个实例树中最低（lowest）的类：
+
+- **静态方法**和显式类名称可能对于处理一个类本地的数据来说是更好的解决方案。
+- **类方法**可能更适合处理对层级中的每个类不同的数据。
+
+类方法十分适用于当代码需要管理每个类实例计数器的场景。在下面代码中，顶层的超类使用一个类方法来管理状态信息，该信息根据树中的每个类都不同，而且存储在类中：
+```python
+# spam_class2.py
+class Spam:
+    numInstances = 0
+    def count(cls):             # Per-class instance counters
+        cls.numInstances += 1   # cls is lowest class above instance
+    def __init__(self):
+        self.count()            # Passes self.__class__ to count
+    count = classmethod(count)
+
+class Sub(Spam):
+    numInstances = 0
+    def __init__(self):         # Redefines __init__
+        Spam.__init__(self)
+        
+class Other(Spam):              # Inherits __init__
+    numInstances = 0
+```
+
+```python
+>>> from spam_class2 import Spam, Sub, Other
+>>> x = Spam()
+>>> y1, y2 = Sub(), Sub()
+>>> z1, z2, z3 = Other(), Other(), Other()
+>>> x.numInstances, y1.numInstances, z1.numInstances # Per-class data!
+(1, 2, 3)
+>>> Spam.numInstances, Sub.numInstances, Other.numInstances
+(1, 2, 3)
+```
 
 
 
 ### 32.6 装饰器和元类：Part 1
 
+上一节中介绍的内置函数`staticmethod`和`classmethod`调用技术似乎有些奇怪。Python的 ***装饰器***（decorators）可以简化这一需求，并提供了一种通用工具，用来管理 *函数* 和 *类* ，或在之后对它们调用，以增加逻辑控制。
+
+这称为“装饰”，但更具体地说，实际上只是一种在定义函数和类的时候使用显式语法来运行额外处理步骤的方法。它有2种风格：
+
+- **函数装饰器（Function decorators）** ：通过将简单函数和类的方法包装（wrap）在作为另一个函数（通常称为 ***元函数***，*metafunction*）实现的额外逻辑层中，为简单函数和类的方法指定特殊的操作模式。
+- **类装饰器（Class decorators）** ：对类执行同样的操作，添加对整个对象及其接口的管理的支持。虽然可能更简单，但它们通常于***元类*** （metaclass）的角色重叠。
+
+#### 函数装饰器基础
+
+从语法上来讲，函数装饰器是跟在它后边的函数的运行时的声明。函数装饰器被写在一行，就在定义函数或方法的`def`语句之前。它由`@`符号和跟在`@`符号后的一个管理其他函数的函数（被称为 ***元函数***，*metafunction* ）所组成。
+
+例如，现在的静态方法可以用下面的装饰器语法编写：
+
+```python
+class C:
+    @staticmethod    # Function decoration syntax
+    def meth():
+        ...
+```
+
+从内部来看，这个语法和下面的写法效果相同，即，把函数传递给装饰器，在赋值给最初的变量名：
+
+```python
+class C:
+    def meth():
+        ...
+    meth = staticmethod(meth) # Decoration rebinds the method name to the decorator’s result.
+```
+
+结果就是，调用方法函数的名称，实际上是触发了它`staticmethod`装饰器的结果。
+
+因为内置函数`classmethod`和`staticmethod`都接受一个函数作为参数并返回一个可调用对象用来对原始函数进行重绑定，所以它们可以以相同的方式用作装饰器：
+```python
+# File bothmethods_decorators.py
+
+class Methods(object):    # object needed in 2.X for property setters
+    def imeth(self, x):   # Normal instance method: passed a self
+        print([self, x])
+
+    @staticmethod
+    def smeth(x):          # Static: no instance passed
+        print([x])
+
+    @classmethod
+    def cmeth(cls, x):     # Class: gets class, not instance
+        print([cls, x])
+
+    @property              # Property: computed on fetch
+    def name(self):
+        return 'Bob ' + self.__class__.__name__
+```
+
+
+```python
+>>> from bothmethods_decorators import Methods
+>>> obj = Methods()
+>>> obj.imeth(1)
+[<bothmethods_decorators.Methods object at 0x0000000002A256A0>, 1]
+>>> obj.smeth(2)
+[2]
+>>> obj.cmeth(3)
+[<class 'bothmethods_decorators.Methods'>, 3]
+>>> obj.name
+'Bob Methods'
+```
+
+#### 用户自定义函数装饰器初探
+
+下面的类通过重写`__call__`运算符重载方法为类实例实现函数调用接口：
+
+```python
+class tracer:
+    def __init__(self, func):   # Remember original, init counter
+        self.calls = 0
+        self.func = func
+    def __call__(self, *args):  # On later calls: add logic, run original
+        self.calls += 1
+        print('call %s to %s' % (self.calls, self.func.__name__))
+        return self.func(*args)
+
+@tracer                         # Same as spam = tracer(spam)
+def spam(a, b, c):              # Wrap spam in a decorator object
+    return a + b + c
+
+print(spam(1, 2, 3))            # Really calls the tracer wrapper object
+print(spam('a', 'b', 'c'))      # Invokes __call__ in class
+```
+
+因为函数`spam`是通过装饰器`tracer`执行的，所以当最初的变量名`spam`调用时，实际上触发的是类中的`__call__`方法。
+
+结果就是，为最初的`spam`函数添加了一层逻辑：
+
+```python
+c:\code> python tracer1.py
+call 1 to spam
+6
+call 2 to spam
+abc
+```
+
+通过使用具有嵌套作用域来保存状态的嵌套函数，而不是使用具有属性的可调用的类实例，函数装饰器通常也更适用于类级别（class-level）的方法。
+
+```python
+def tracer(func):                # Remember original
+    def oncall(*args):           # On later calls
+        oncall.calls += 1
+        print('call %s to %s' % (oncall.calls, func.__name__))
+        return func(*args)
+    oncall.calls = 0
+    return oncall
+
+class C:
+    @tracer
+    def spam(self,a, b, c): return a + b + c
+
+x = C()
+print(x.spam(1, 2, 3))
+print(x.spam('a', 'b', 'c'))     # Same output as tracer1 (in tracer2.py)
+```
+
+#### 类装饰器和元类初探
+
+##### 类装饰器
+
+类似于函数装饰器，类装饰器在一条`class`语句的末尾运行，并将类名重绑定为一个可调用对象。同样，它们可以用来管理类（在类创建之后），或者当随后创建实例的时候插入一个包装逻辑层来管理实例。代码结构如下：
+
+```python
+def decorator(aClass): 
+    ...
+
+@decorator # Class decoration syntax
+class C: 
+    ...
+```
+
+被映射为如下等价的代码：
+
+```python
+def decorator(aClass): 
+    ...
+    
+class C: 
+    ... # Name rebinding equivalent
+
+C = decorator(C)
+```
+
+##### 元类
+
+
 
 ### 32.7 内置函数`super`
+
+第五版，暂略
 
 
 ### 32.8 类的陷阱
