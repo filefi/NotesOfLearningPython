@@ -5319,7 +5319,18 @@ C = decorator(C)
 
 ##### 元类
 
+***元类*** 是一种类似的基于类的高级工具，其用途往往与类装饰器有所重合。它们提供了一种可选的模式，会把一个类对象的创建导向到顶级类`type`的一个子类，在一条`class`语句的最后：
 
+```python
+class Meta(type):
+    def __new__(meta, classname, supers, classdict):
+        ...extra logic + class creation via type call...
+        
+class C(metaclass=Meta):
+    ...my creation routed to Meta...        # Like C = Meta('C', (), {...})
+```
+
+元类通常重新定义类`type`的`__new__`和`__init__`方法，以实现对一个新的类对象的创建和初始化的控制。
 
 ### 32.7 内置函数`super`
 
@@ -5327,6 +5338,29 @@ C = decorator(C)
 
 
 ### 32.8 类的陷阱
+
+#### 修改类属性的副作用
+
+理论上来说，类和类实例都是可改变的（mutable）对象。修改类属性时，这一点特别重要，因为所有从类产生的实例都共享这个类的命名空间，任何在类层次所做的修改都会反映在所有实例中，除非实例拥有自己的被修改的类属性版本。
+
+#### 修改可变的类属性也可能产生副作用
+
+
+
+#### 多重继承：顺序很重要
+
+
+
+#### 类和方法中的作用域
+
+
+
+#### Miscellaneous Class Gotchas
+
+
+
+#### KISS回顾：过度包装（Overwrapping-itis）
+
 
 
 
