@@ -16,6 +16,8 @@ Welcome to Notes Of Learning Python's documentation!
    Part_4_Functions_and_Generators
    Part_5_Modules_and_Packages
    Part_6_Classes_and_OOP
+   Part_7_Exceptions_and_Tools
+   Part_8_Advanced_Topics
 
 
 Indices and tables

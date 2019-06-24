@@ -5343,25 +5343,86 @@ class C(metaclass=Meta):
 
 理论上来说，类和类实例都是可改变的（mutable）对象。修改类属性时，这一点特别重要，因为所有从类产生的实例都共享这个类的命名空间，任何在类层次所做的修改都会反映在所有实例中，除非实例拥有自己的被修改的类属性版本。
 
+在类主体中，对变量名`a`的赋值语句会产生属性`X.a`，运行时存在于类对象内，而且会由所有类`X`的实例继承：
+
+```python
+>>> class X:
+        a = 1    # Class attribute
+>>> I = X()
+>>> I.a          # Inherited by instance
+1
+>>> X.a
+1
+```
+
+注意，当我们在`class`语句外动态修改类属性时，也会修改每个对象从该类继承而来的这个属性：
+
+```python
+>>> X.a = 2 # May change more than X
+>>> I.a # I changes too
+2
+>>> J = X() # J inherits from X's runtime values
+>>> J.a # (but assigning to J.a changes a in J, not X or I)
+2
+>>> X.b = 2
+>>> I.b     # I changes too
+2
+```
+
+
+
 #### 修改可变的类属性也可能产生副作用
+
+如果一个类属性引用一个可变对象，那么从任何实例进行原处修改该对象，都会立刻影响到所有实例：
+
+```python
+>>> class C:
+        shared = []            # Class attribute
+        def __init__(self):
+            self.perobj = []   # Instance attribute
+>>> x = C()                    # Two instances
+>>> y = C()                    # Implicitly share class attrs
+>>> y.shared, y.perobj
+([], [])
+>>> x.shared.append('spam')    # Impacts y's view too!
+>>> x.perobj.append('spam')    # Impacts x's data only
+>>> x.shared, x.perobj
+(['spam'], ['spam'])
+>>> y.shared, y.perobj         # y sees change made through x
+(['spam'], [])
+>>> C.shared                   # Stored on class and shared
+['spam']
+```
 
 
 
 #### 多重继承：顺序很重要
 
+如果使用多重继承，列在`class`语句首行内的超类的顺序很重要。
 
+经验法则是，当混合类尽可能的独立完备时，多重继承的工作状态最好。
 
 #### 类和方法中的作用域
 
-
+略
 
 #### Miscellaneous Class Gotchas
 
+##### Choose per-instance or class storage wisely
 
+略
+
+##### You usually want to call superclass constructors
+
+略
+
+##### Delegation-based classes in 3.X: `__getattr__` and built-ins
+
+略
 
 #### KISS回顾：过度包装（Overwrapping-itis）
 
-
+如果运用得当的话，OOP的程序代码重用功能会在开发的攻坚阶段发挥其优越性。不过，有时候，OOP的过度抽象使代码晦涩难懂。
 
 
 
