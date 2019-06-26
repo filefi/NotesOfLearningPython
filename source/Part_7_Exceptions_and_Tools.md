@@ -10,7 +10,7 @@
 - `assert`：有条件地在程序代码中触发异常；
 - `with`/`as`：在Python 2.6及后续版本中实现的上下文管理器。
 
-### 为什么使用异常
+### 33.1 为什么使用异常
 
 借助异常，可以在一个步骤内跳至异常处理器，终止开始的所有函数调用而进入异常管理器。在异常处理器中编写代码，来响应在适当时候引发的异常。
 
@@ -26,7 +26,7 @@
 - 终止行为：`try`/`finally`语句可确保无论程序是否有异常，一定会进行需要的结束操作。
 - 非常规控制流程：因为异常可以看做是一种高级的“goto”，它可以作为实现非常规的控制流程的基础。Python中没有“goto”语句，但是，异常有时候可以充当类似的角色。
 
-### 异常处理：简明扼要
+### 33.2 异常处理：简明扼要
 
 #### 默认异常处理器
 
@@ -156,7 +156,7 @@ IndexError: string index out of range
 
 ## 第34章 异常编码细节
 
-### try/except/else语句
+### 34.1 try/except/else语句
 
 在Python 2.5之后，`try`/`except`/`else`和`try`/`finally`语句可以混合在一个`try`语句中。
 
@@ -302,13 +302,22 @@ Keep in mind that once
 
 ### 34.2 try / finally 语句
 
+如果在`try`中包含了`finally`子句，Python一定会执行`finally`代码块中的语句，无论`try`代码块执行时是否发生了异常。其一般形式如下所示：
+
+```python
+try:
+    statements # Run this action first
+finally:
+    statements # Always run this code on the way out
+```
+
 
 
 #### 例子：利用try/finally编写终止行为
 
 
 
-### 统一 try/except/finally 语句
+### 34.3 统一 try / except / finally 语句
 
 
 
@@ -324,7 +333,7 @@ Keep in mind that once
 
 
 
-### `raise`语句
+### 34.4 `raise`语句
 
 #### 利用`raise` 传递异常
 
@@ -334,7 +343,7 @@ Keep in mind that once
 
 
 
-### assert语句
+### 34.5 `assert`语句
 
 
 
@@ -342,7 +351,7 @@ Keep in mind that once
 
 
 
-### `with`/`as`上下文管理器（context manager）
+### 34.6 `with`/`as`上下文管理器（context manager）
 
 #### 基本使用
 
@@ -359,6 +368,14 @@ Keep in mind that once
 
 
 ## 第35章 异常对象
+
+
+
+
+
+
+
+---
 
 
 
