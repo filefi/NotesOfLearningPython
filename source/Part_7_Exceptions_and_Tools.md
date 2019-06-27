@@ -144,7 +144,7 @@ IndexError: string index out of range
         file.write('The larch!\n')
 ```
 
-**注意：这只在处理某些对象类型的时候才适用。因此`try`/`finally`是一种更加通用的终止结构。**
+**注意：这只在处理实现了上下文管理器协议的对象类型的时候才适用。因此`try`/`finally`是一种更加通用的终止结构。**
 
 
 
@@ -311,53 +311,452 @@ finally:
     statements # Always run this code on the way out
 ```
 
+在该语句中，Python首先尝试执行`try`语句块中的代码，然后接下来的执行情况取决于`try`中是否发生异常：
 
+- 如果`try`代码块运行时没有异常发生，Python会跳至执行`finally`代码块，然后在整个`try`语句后继续执行下去。
+- 如果`try`代码块运行是有异常发生，Python依然会回来运行`finally`代码块，但是接着会把异常向上传递到较高的`try`语句或顶层默认处理器。
 
 #### 例子：利用try/finally编写终止行为
+
+在下面例子的这段代码中，带有`finally`分句的`try`中包装了一个文件处理函数的调用，以确保无论函数是否触发异常，该文件总是会关闭：
+
+```python
+class MyError(Exception): pass
+
+def stuff(file):
+    raise MyError()
+    
+file = open('data', 'w') # Open an output file (this can fail too)
+try:
+    stuff(file)          # Raises exception
+finally:
+    file.close()         # Always close file to flush output buffers
+print('not reached')     # Continue here only if no exception
+```
 
 
 
 ### 34.3 统一 try / except / finally 语句
 
+在Python 2.5及其以后的版本，我们可以在同一个`try`语句中混合`finally` 、 `except` 以及 `else`子句。也就是下面形式的语句：
 
+```python
+try:                # Merged form
+    main-action
+except Exception1:
+    handler1
+except Exception2:  # Catch exceptions
+    handler2
+    ...
+else:               # No-exception handler
+    else-block
+finally:            # The finally encloses all else
+    finally-block
+```
+
+**这个语句的执行情况如下：**
+
+1. `try`语句块中的main-action代码会先执行；
+2. 如果`try`语句块中的代码引发异常，那么所有`except`代码块都会逐一测试，寻找与抛出的异常相符的语句。
+3. 如果`try`语句块中的代码没有引发异常，将会执行`else`语句块中的else-block。
+4. 无论是main-action代码是在没有引发异常的情况下执行完毕，还是main-action代码引发的异常都已处理后，`finally`语句块中的finally-block就会执行。事实上，即使在`except`或`else`代码块内引发了新的异常，`finally`内的finally-block依然会执行。
+5. 就像往常一样，`finally`子句并不会终止异常：当finally-block执行时，如果异常还没有被处理，就会在finally-block执行完后继续传递，而控制权会跳至程序的其他地方（到另一个`try`，或者默认的顶层处理器）；当finally-block执行时，异常已经被捕获并处理，程序就会在整个`try`语句之后继续顺序执行。
 
 ####  统一 try 语句语法
 
+当使用统一的`try`语句语法时，`try`语句必须有一个`except`或一个`finally`，并且其部分的顺序必须如下所示：
 
+1. `try`
+2. `except`
+3. `else`
+4. `finally`
 
-#### 通过嵌套合并 finally 和 except
-
-
+其中，`else`和`finally`是可选的，可能会有0个或多个`except`，但是，如果出现一个`else`的话，必须有至少一个`except`。
 
 #### 合并 try 的例子
+
+以下示范了合并的`try`语句的执行情况。下面的文件`mergedexc.py`编写了4种常见场景，通过`print`语句来说明其意义：
+
+```python
+# File mergedexc.py (Python 3.X + 2.X)
+
+sep = '-' * 45 + '\n'
+
+print(sep + 'EXCEPTION RAISED AND CAUGHT')
+try:
+    x = 'spam'[99]
+except IndexError:
+    print('except run')
+finally:
+    print('finally run')
+print('after run')
+
+print(sep + 'NO EXCEPTION RAISED')
+try:
+    x = 'spam'[3]
+except IndexError:
+    print('except run')
+finally:
+    print('finally run')
+print('after run')
+
+print(sep + 'NO EXCEPTION RAISED, WITH ELSE')
+try:
+    x = 'spam'[3]
+except IndexError:
+    print('except run')
+else:
+    print('else run')
+finally:
+    print('finally run')
+print('after run')
+
+print(sep + 'EXCEPTION RAISED BUT NOT CAUGHT')
+try:
+    x = 1 / 0
+except IndexError:
+    print('except run')
+finally:
+    print('finally run')
+print('after run')
+```
+
+根据程序的输出，我们可以知道每种场景下，每个子句的执行顺序：
+
+```bash
+c:\code> py −3 mergedexc.py
+---------------------------------------------
+EXCEPTION RAISED AND CAUGHT
+except run
+finally run
+after run
+---------------------------------------------
+NO EXCEPTION RAISED
+finally run
+after run
+---------------------------------------------
+NO EXCEPTION RAISED, WITH ELSE
+else run
+finally run
+after run
+---------------------------------------------
+EXCEPTION RAISED BUT NOT CAUGHT
+finally run
+Traceback (most recent call last):
+File "mergedexc.py", line 39, in <module>
+x = 1 / 0
+ZeroDivisionError: division by zero
+```
 
 
 
 ### 34.4 `raise`语句
 
+要显式地触发异常，可以使用`raise`语句，其一般形式相当简单。`raise`语句的组成是：`raise`关键字，后面跟着可选的要引发的类或者类的一个实例。
+
+```python
+raise instance    # Raise instance of class
+raise class       # Make and raise instance of class: makes an instance implicitly
+raise             # Reraise the most recent exception
+```
+
+在Python 2.6以后版本和3.X中，异常总是类的实例。因此以下直接提供一个实例的形式最常见：
+```python
+raise instance    # Raise instance of class
+```
+
+我们可以提前创建异常类的实例，然后使用`raise`引发它们。如下例中，2个`raise`语句都引发了`IndexError`：
+```python
+exc = IndexError() # Create instance ahead of time
+raise exc
+
+excs = [IndexError, TypeError]
+raise excs[0]
+```
+
+如果我们传入一个类，Python会隐式地创建该类的实例。所以，以下两种新式是等价的，都会创建异常类的一个实例：
+```python
+raise IndexError       # Make and raise instance of class: makes an instance implicitly
+raise IndexError() 
+```
+
+如果只使用一个`raise`，则会重新引发最近引发的异常。它通常用于异常处理器中，以传播已经捕获的异常。
+```python
+raise             # Reraise the most recent exception
+```
+
+如果一个`try`包含了一个名为`except name as X:`子句，变量X将会分配给引发中所提供的实例：
+
+```python
+try:
+    ...
+except IndexError as X: # X assigned the raised instance object
+    ...
+```
+
+`as`在`try`处理中是可选的，如果忽略它，该实例直接不会分配给一个名称，但是，包含它将使得处理器能够访问实例中的数据以及异常类中的方法。这种模式对于我们用类编写的用户自定义的异常也同样有效：
+
+```python
+class MyExc(Exception): pass
+...
+raise MyExc('spam') # Exception class with constructor args
+...
+try:
+    ...
+except MyExc as X: # Instance attributes available in handler
+    print(X.args)
+```
+
+**一旦异常在程序中某处由一条`except`子句捕获，它就死掉了（不会被传递到另一个`try`），除非由另一个`raise`语句或错误重新引发它。**
+
+
+
+#### try/except 变量和作用域
+
+Python 3.X 将异常引用变量名作为`except`语句块的本地变量名，即该变量在退出`except`语句块后将不可用。这很像是Python 3.X的解析表达式（comprehension expression）中的临时循环变量。
+
+```python
+c:\code> py −3
+>>> try:
+... 1 / 0
+... except Exception, X:
+SyntaxError: invalid syntax
+
+>>> try:
+... 1 / 0
+... except Exception as X:          # 3.X localizes 'as' names to except block
+... print(X)
+...
+division by zero
+>>> X
+NameError: name 'X' is not defined
+```
+
+但和循环变量不同的是，在Python 3.X中，这个变量在退出`except`语句块之后将被删除。
+
+```python
+>>> X = 99                          # 定义X
+>>> try:
+... 1 / 0
+... except Exception as X:          # 3.X localizes _and_ removes on exit!
+... print(X)
+...
+division by zero
+>>> X                               # 变量名X已经被删除了
+NameError: name 'X' is not defined
+
+>>> X = 99
+>>> {X for X in 'spam'}             # 2.X/3.X localizes only: not removed
+{'s', 'a', 'p', 'm'}
+>>> X
+99
+```
+
+正因为如此，你应该在`try`语句的`except`子句中使用唯一的变量名，即使它们是作用域内的本地化变量。
+
+如果你确实需要在退出`except`语句后引用异常实例，直接将它赋值给另一个不会自动被删除的变量：
+
+```python
+>>> try:
+...     1 / 0
+... except Exception as X:            # Python removes this reference
+...     print(X)
+...     Saveit = X                    # Assign exc to retain exc if needed
+...
+division by zero
+>>> X
+NameError: name 'X' is not defined
+>>> Saveit
+ZeroDivisionError('division by zero',)
+```
+
+
+
+
 #### 利用`raise` 传递异常
+
+`raise`语句不包括异常名称或额外异常实例时，就是重新引发当前异常。如果需要捕获和处理一个异常，又想重新引发它，并将其传递给更高层的处理器，一般就使用这种形式：
+
+```python
+>>> try:
+...     raise IndexError('spam')    # Exceptions remember arguments
+... except IndexError:
+...     print('propagating')
+...     raise                       # Reraise most recent exception
+...
+propagating
+Traceback (most recent call last):
+File "<stdin>", line 2, in <module>
+IndexError: spam
+```
 
 
 
 #### Python 3.X 异常链：raise from
 
+Python 3.X允许`raise`语句拥有一个可选的`from`子句：
 
+```python
+raise newexception from otherexception
+```
+
+当使用`from`的时候，第二个表达式指定了另一个异常类或实例，它会附加到引发异常的`__cause__`属性。如果引发的异常没有捕获，Python把异常也作为标准出错消息的一部分打印出来：
+
+```python
+>>> try:
+...     1/0
+... except Exception as E:
+...     raise TypeError('Bad') from E
+...
+Traceback (most recent call last):
+  File "<stdin>", line 2, in <module>
+ZeroDivisionError: division by zero
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "<stdin>", line 4, in <module>
+TypeError: Bad
+>>>
+```
+
+当在一个异常处理器内部引发一个异常的时候，隐式地遵从类似的过程：前一个异常附加到新的异常的`__context__`属性，并且如果该异常未捕获的话，再次显示在标准错误消息中：
+
+```python
+>>> try:
+...     1 / 0
+... except:
+...     badname # Implicitly chained exceptions
+...
+Traceback (most recent call last):
+File "<stdin>", line 2, in <module>
+ZeroDivisionError: division by zero
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+File "<stdin>", line 4, in <module>
+NameError: name 'badname' is not defined
+```
+
+在这两种情况下，因为最初附加到新异常对象的异常对象可能本身已经附加了造成异常的原因，所以因果链（causality chain）可能是任意长的，并在错误消息中全部被显示出来。也就是说，错误消息可能会给出两个以上的异常。当一个异常触发另一个异常时，在显式和隐式的上下文中的效果都允许程序员知道所有涉及的异常：
+
+```python
+>>> try:
+...     try:
+...         raise IndexError()
+...     except Exception as E:
+...         raise TypeError() from E
+... except Exception as E:
+...     raise SyntaxError() from E
+...
+Traceback (most recent call last):
+File "<stdin>", line 3, in <module>
+IndexError
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+File "<stdin>", line 5, in <module>
+TypeError
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+File "<stdin>", line 7, in <module>
+SyntaxError: None
+```
+
+类似地，即使是隐式地被触发，下面代码也将显示3个异常：
+
+```python
+try:
+    try:
+        1 / 0
+    except:
+        badname
+except:
+    open('nonesuch')
+```
+
+实际上，Python 3.3增加了一种新的语法形式，以阻止异常链，即，在`raise from`语句中使用`None`作为异常的变量名：
+
+```python
+raise newexception from None
+```
+
+这允许禁用之前介绍的异常链上下文（context）。
 
 ### 34.5 `assert`语句
 
+`assert`语句可视为条件式的`raise`语句。该语句形式为：
 
+```python
+assert test, data      # The data part is optional
+```
+
+执行起来就像下面的代码：
+
+```python
+if __debug__:
+    if not test:
+        raise AssertionError(data)
+```
+
+换句话说，如果test测试为假，Python就会引发异常`AssertionError`，且将data作为该异常的额外数据。
 
 #### 例子：收集约束条件（但不是错误）
 
+`assert`语句通常是用于验证开发期间程序的状况。显示时，其出错消息正文会自动包括源代码行的信息，以及列在`assert`语句中的值。考虑文件`asserter.py`：
 
+```python
+# asserter.py
+
+def f(x):
+    assert x < 0, 'x must be negative'
+    return x ** 2
+% python
+>>> import asserter
+>>> asserter.f(1)
+Traceback (most recent call last):
+  File "<stdin>", line 1, in <module>
+  File ".\asserter.py", line 2, in f
+    assert x < 0, 'x must be negative'
+AssertionError: x must be negative
+```
+
+**注意：`assert`几乎都是用来收集用户定义的约束条件，而不是捕捉内在的程序设计错误。**
+
+`assert`语句的常见用法之一是，在实现抽象超类时，使用`assert`让未定义方法的调用失败并打印消息。
 
 ### 34.6 `with`/`as`上下文管理器（context manager）
 
+Python 2.6和Python 3.0引入了一种与异常相关的新语句：`with`语句，及其可选的`as`子句。
+
+这个语句的设计是为了和上下文管理器（context manager）对象一起工作。
+
+简而言之，`with`/`as`语句的设计作为`try`/`finally`用法模式的替代方案。用于定义必须执行的终止或“清理”行为，而无论处理步骤中是否发生异常。并且，支持更丰富的基于对象的协议，可以为代码块定义进入和离开动作。
+
 #### 基本使用
+
+`with`语句的基本格式如下：
+
+```
+with expression [as variable]:
+    with-block
+```
 
 
 
 #### 上下文管理协议
+
+
+
+#### Multiple Context Managers in 3.1, 2.7, and Later
+
+
+
+
 
 
 
