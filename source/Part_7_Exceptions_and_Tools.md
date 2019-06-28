@@ -746,15 +746,169 @@ with expression [as variable]:
     with-block
 ```
 
+其中，这里的`expression`要返回一个支持上下文管理协议的对象。如果可选的`as`子句存在的话，此对象也可返回一个值，赋给变量名`variable`。
+
+**注意：`variable`并非必须被赋值为`expression`的结果；`expression`的结果是支持上下文协议的对象，而`variable`可以被赋值为打算在`with`语句块内使用的其他东西。然后，`expression`返回的对象可在with-block语句块开始前运行启动代码（startup code），并在with-block语句块结束后运行终止代码（termination code），而不论`with`语句块是否引发了异常。**
+
+有些内置的Python对象已经得到强化，支持了上下文管理协议，因此可直接用于`with`语句。例如，文件对象有上下文管理器，在`with`语句块结束后可自动关闭文件，不论是否有异常被引发。
+
+```python
+with open(r'C:\misc\data') as myfile:    # open返回简单文件对象，赋值给变量名myfile
+    for line in myfile:
+        print(line)
+        ...more code here...
+```
+
+以上代码实现了和下面使用`try`/`finally`语句类似的效果：
+
+```python
+myfile = open(r'C:\misc\data')
+try:
+    for line in myfile:
+        print(line)
+        ...more code here...
+finally:
+    myfile.close()
+```
+
+同时，多线程模块`threading`所定义的锁和条件变量同步对象也支持上下文管理协议，也可以和`with`语句一起使用：
+
+```python
+import threading
+lock = threading.Lock()            
+with lock:     # with语句确保锁会在代码块执行前自动获得，并在代码块完成后释放，而不管是否引发了异常
+    # critical section of code
+    ...access shared resources...
+```
+
+`decimal`模块也使用上下文管理器来简化存储和保存当前小数配置环境：
+
+```python
+import decimal
+with decimal.localcontext() as ctx: # 在with语句块结束后自动恢复到语句开始前的状态
+    ctx.prec = 2
+    x = decimal.Decimal('1.00') / decimal.Decimal('3.00')
+```
 
 
-#### 上下文管理协议
+
+#### 上下文管理协议 （The Context Management Protocol）
+
+要实现上下文管理器，以使用特殊的方法来接入`with`语句，需要实现特殊的运算符重载方法`__enter__`和`__exit__`。
+
+`with`语句的实际工作方式如下：
+
+1. 计算表达式，所得到的对象称为环境管理器，它必须有`__enter__`和`__exit__`方法。
+
+2. 环境管理器的`__enter__`方法会被调用。如果`as`子句存在，其返回值会赋值给`as`子句中的变量，否则，直接丢弃。
+
+3. 代码块中嵌套的代码会执行。
+
+4. 如果`with`代码块引发异常，`__exit__(type, value, traceback)`方法会被调用（带有异常细节）。这三个值与`sys.exc_info`返回的值相同。如果此方法返回值为假，则异常会重新引发；否则，异常被终止。正常情况下，异常应该被重新引发，这样的话才能传递到`with`语句之外。
+
+5. 如果`with`代码块没有引发异常，`__exit__`方法依然会被调用，其`type`，`value`和`traceback`参数都会以`None`传递。
+
+   
+
+下面定义一个上下文管理器对象，跟踪器所用的任意一个`with`语句内`with`代码块的进入和退出：
+
+```python
+# withas.py
+
+class TraceBlock:
+    def message(self, arg):
+        print('running ' + arg)
+    def __enter__(self):
+        print('starting with block')
+        return self    # 返回self作为赋值给as变量的对象，但视情况而定，也可以返回其他对象；
+    def __exit__(self, exc_type, exc_value, exc_tb):
+        if exc_type is None:
+            print('exited normally\n')
+        else:
+            print('raise an exception! ' + str(exc_type))
+            return False  # 返回False，或删除此return语句都能起到传播异常的效果,因为默认的函数返回值是None
+
+if __name__ == '__main__':
+    with TraceBlock() as action:
+        action.message('test 1')
+        print('reached')
+        
+    with TraceBlock() as action:
+        action.message('test 2')
+        raise TypeError
+        print('not reached')
+```
+
+运行时，环境管理器会以`__enter__`和`__exit__`跟踪`with`语句代码块的进入和离开。
+
+```bash
+c:\code> py −3 withas.py
+starting with block
+running test 1
+reached
+exited normally
+
+starting with block
+running test 2
+raise an exception! <class 'TypeError'>
+Traceback (most recent call last):
+File "withas.py", line 22, in <module>
+raise TypeError
+TypeError
+```
 
 
 
 #### Multiple Context Managers in 3.1, 2.7, and Later
 
+Python 2.7和3.1引入了一个`with`的扩展。在Python 2.7和3.1，及其以后的Python版本，`with`语句可以指定多个（有时也叫“嵌套的”）上下文管理器。
 
+例如，下例中，当语句块推出的时候，两个文件的退出操作都会自动运行，而不管异常输出什么：
+
+```python
+with open('data') as fin, open('res', 'w') as fout:
+    for line in fin:
+        if 'some key' in line:
+            fout.write(line)
+```
+
+可以列出任意数量的上下文管理器项，并且多个项目和嵌套的`with`语句一样地工作。其形式如下：
+
+```python
+with A() as a, B() as b:
+    ...statements...
+
+```
+
+以上形式等价于 Python 3.0和2.6以下版本中的以下形式：
+
+```python
+with A() as a:
+    with B() as b:
+        ...statements...
+```
+
+下面使用这一扩展来实现两个文件的同行扫描：
+
+```python
+>>> with open('script1.py') as f1, open('script2.py') as f2:
+...     for pair in zip(f1, f2):
+...         print(pair)
+...
+('# A first Python script\n', 'import sys\n')
+('import sys # Load a library module\n', 'print(sys.path)\n')
+('print(sys.platform)\n', 'x = 2\n')
+('print(2 ** 32) # Raise 2 to a power\n', 'print(x ** 32)\n')
+```
+
+你也可以使用`if`语句替换`print`，并用`enumerate`得到行数，来对文本文件进行一行一行的比较：
+
+```python
+with open('script1.py') as f1, open('script2.py') as f2:
+    for (linenum, (line1, line2)) in enumerate(zip(f1, f2)):
+        if line1 != line2:
+            print('%s\n%r\n%r' % (linenum, line1, line2))
+```
 
 
 
