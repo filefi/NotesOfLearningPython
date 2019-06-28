@@ -922,6 +922,263 @@ with open('script1.py') as f1, open('script2.py') as f2:
 
 ## 第35章 异常对象
 
+基于类的异常有如下特定：
+
+- 提供类型分类，对今后的修改有更好的支持。
+- 它们附加了状态信息。
+- 它们支持继承。
+
+### 35.1 异常
+
+#### 基于类的异常
+
+类异常是由超类关系进行匹配的。当`try`语句的`except`子句列出了一个超类时，就可以了捕捉该超类的实例，以及类树中所有较低位置的子类的实例。
+
+结果就是，类异常支持异常层次的结构：超类变成分类的名称，而子类变成这个分类中特定种类的异常。
+
+#### 编写异常类
+
+下列`classexc.py`文件中，我们定义一个名为`General`的超类，以及两个子类`Specific1`和`Specific2`。这个例子说明异常分类的概念：`General`是分类的名称，而子类`Specific1`和`Specific2`是这个分类中特定种类的异常。捕捉`General`的处理器也会捕捉其任何子类。
+
+```python
+# classexc.py
+
+class General(Exception): pass
+class Specific1(General): pass
+class Specific2(General): pass
+
+def raiser0():
+    X = General() # Raise superclass instance
+    raise X
+    
+def raiser1():
+    X = Specific1() # Raise subclass instance
+    raise X
+    
+def raiser2():
+    X = Specific2() # Raise different subclass instance
+    raise X
+    
+for func in (raiser0, raiser1, raiser2):
+    try:
+        func()
+    except General: # Match General or any subclass of it
+        import sys
+        print('caught: %s' % sys.exc_info()[0])
+```
+
+```
+C:\code> python classexc.py
+caught: <class '__main__.General'>
+caught: <class '__main__.Specific1'>
+caught: <class '__main__.Specific2'>
+```
+
+**实现基于类的异常时，需要注意以下细节：**
+
+- **Exception超类：** 自定义异常必须直接地或间接地派生自内置异常超类`BaseException`。大多数自定义异常类都继承自内置异常超类`BaseException`的子类`Exception`，以支持针对常规异常类型的全捕获处理器，即在一个处理器中指定它就会捕获大多数程序应该捕获的所有异常。
+- **引发实例：** 在类异常模式中，我们总是引发和捕获一个类实例对象。异常实例可以在该`raise`之前创建，也可以在`raise`语句中创建。
+- **捕获分类：** 捕获异常分类的名称也会捕获这个分类中特定种类的异常。
+- **异常细节：** `sys.exc_info`调用是抓取最近引发的异常的常用方式。简而言之，对基于类的异常而言，其结果中的第一个元素就是引发异常类，而第二个实际引发的实例。
+
+
+
+### 35.2 为什么使用异常层次架构？
+
+假设用Python编写了一个数值计算库。当编写库时，有两件事会让代码中的数值出错：除数为0，以及数值溢出。最佳的作法是将类库的异常定义到类树中，有个共同的超类来包含整个类型。
+
+```python
+# mathlib.py
+
+class NumErr(Exception): pass
+class Divzero(NumErr): pass
+class Oflow(NumErr): pass
+
+def func():
+    ...
+    raise DivZero()
+    
+...and so on...
+```
+
+这样的话，你的库用户只需列出共同的超类（也就是分类），来捕捉库的所有异常：
+
+```python
+# client.py
+import mathlib
+try:
+    mathlib.func(...)
+except mathlib.NumErr:
+    ...report and recover...
+```
+
+
+
+### 35.3 内置异常类
+
+在Python 3.X中，所有内置异常都是预定义的类，可以作为内置变量名，也可以作为`builtin`模块中的内置名称使用。
+
+此外，为了支持各种捕捉模式，Python 把内置异常组织成层次：
+
+- `BaseException`：异常的顶级根类。**这个类不能当作是由用户定义的类直接继承！** 它提供了子类所继承的默认的打印和状态保持行为。
+- `Exception`： 与应用相关的异常的顶层根超类。这是`BaseException`的一个直接子类，并且是所有其他内置异常的超类，除了系统退出事件类之外（`SystemExit`、`KeyboardInterrupt`和`GeneratorExit`）。几乎所有用户定义的类都应该继承自这个类，而不是`BaseException`。
+- `ArithmeticError`： 所有数值错误的超类，并且是`Exception`的一个子类。
+- `OverflowError`： 识别特定的数值错误的子类。
+
+#### 默认打印和状态
+
+内置异常提供了默认打印显示和状态保持。除非你重新定义类继承自它们的构造函数，传递给这些类的任何构造函数参数都会保存在实例的`args`元组属性中，并且当打印该实例的时候自动显示。
+
+当打印异常实例时，传递给异常类的参数就会显示在错误消息中：
+
+```python
+>>> raise IndexError                # Same as IndexError(): no arguments
+Traceback (most recent call last):
+File "<stdin>", line 1, in <module>
+IndexError
+
+>>> raise IndexError('spam')         # Constructor argument attached, printed
+Traceback (most recent call last):
+File "<stdin>", line 1, in <module>
+IndexError: spam
+    
+>>> I = IndexError('spam')           # Available in object attribute
+>>> I.args
+('spam',)
+>>> print(I)                         # Displays args when printed manually
+spam
+```
+
+对于用户定义的异常也是如此，因为它们继承了内置异常超类：
+
+```python
+>>> class E(Exception): pass
+...
+>>> raise E
+Traceback (most recent call last):
+File "<stdin>", line 1, in <module>
+__main__.E
+
+>>> raise E('spam')
+Traceback (most recent call last):
+File "<stdin>", line 1, in <module>
+__main__.E: spam
+    
+>>> I = E('spam')
+>>> I.args
+('spam',)
+>>> print(I)
+spam
+```
+
+```python
+>>> try:
+...     raise E('spam')
+... except E as X:
+...     print(X)          # Displays and saves constructor arguments
+...     print(X.args)
+...     print(repr(X))
+...
+spam
+('spam',)
+E('spam',)
+```
+
+```python
+>>> try:                  # Multiple arguments save/display a tuple
+...     raise E('spam', 'eggs', 'ham')
+... except E as X:
+...     print('%s %s' % (X, X.args))
+...
+('spam', 'eggs', 'ham') ('spam', 'eggs', 'ham')
+```
+
+
+
+### 35.4 自定义打印显示
+
+要提供一个更加定制的显示，我们可以在类中定义`__repr__`和`__str__`中的任何一个，来返回想要为异常显示的字符串。
+
+```python
+>>> class MyBad(Exception):
+...     def __str__(self):
+...         return 'Always look on the bright side of life...'
+...
+>>> try:
+...     raise MyBad()
+... except MyBad as X:
+...     print(X)
+...
+Always look on the bright side of life...
+>>> raise MyBad()
+Traceback (most recent call last):
+File "<stdin>", line 1, in <module>
+__main__.MyBad: Always look on the bright side of life...
+```
+
+
+
+### 35.5 自定义数据和行为
+
+尽管默认的构造函数对于很多情况都适用，但为了满足更多的定制需求，我们可以提供一个自己的构造函数。
+
+#### 提供异常细节
+
+例如，解析数据文件的一个程序可能通过引发一个异常实例来表示一个格式化错误，而该实例用关于错误的额外细节类填充：
+
+```python
+>>> class FormatError(Exception):
+        def __init__(self, line, file):
+            self.line = line
+            self.file = file
+>>> def parser():
+        raise FormatError(42, file='spam.txt') # When error found
+>>> try:
+...     parser()
+... except FormatError as X:
+...     print('Error at: %s %s' % (X.file, X.line))
+...
+Error at: spam.txt 42
+```
+
+#### 提供异常方法
+
+除了支持特定于应用程序的状态信息，还可以定义在处理器中调用的方法。
+
+例如，如下的代码添加了一个方法，它使用异常状态信息把错误记录到一个文件中：
+
+```python
+from __future__ import print_function # 2.X compatibility
+class FormatError(Exception):
+    logfile = 'formaterror.txt'
+    def __init__(self, line, file):
+        self.line = line
+        self.file = file
+    def logerror(self):
+        log = open(self.logfile, 'a')
+        print('Error at:', self.file, self.line, file=log)
+        
+def parser():
+    raise FormatError(40, 'spam.txt')
+    
+if __name__ == '__main__':
+    try:
+        parser()
+    except FormatError as exc:
+        exc.logerror()
+```
+
+运行的时候，这段脚本把出错消息写入一个文件中，以响应异常处理器中的方法调用：
+
+```python
+c:\code> del formaterror.txt
+c:\code> py −3 excparse.py
+c:\code> py −2 excparse.py
+c:\code> type formaterror.txt
+Error at: spam.txt 40
+Error at: spam.txt 40
+```
+
 
 
 
