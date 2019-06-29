@@ -1191,3 +1191,165 @@ Error at: spam.txt 40
 
 ## 第36章 异常的设计
 
+### 36.1 嵌套异常处理器
+
+技术上来讲，从语法和代码运行时的控制流程来看，`try`语句是可以嵌套的。
+
+嵌套的`try`/`except`语句：当异常引发时（由你或由Python引起），控制权会跳回具有相符的`except`子句、最近进入的`try`语句，而程序会在`try`语句后继续执行下去。`except`子句会拦截并停止异常，这里就是你处理异常并从中恢复的地方。
+
+![1561796521461](_static/images/Part_7_Exceptions_and_Tools.assets/1561796521461.png)
+
+嵌套的`try`/`finally`：当异常在这里引发时，控制权会回到最近进入的`try`去执行其`finally`语句，异常会持续传播到所有激活状态下`try`语句的`finally`，直到最终抵达默认顶层处理器，在那里打印出错消息。`finally`子句会拦截（但不会停止）异常：只是定义了离开前要执行的动作而已。
+
+![1561796549628](_static/images/Part_7_Exceptions_and_Tools.assets/1561796549628.png)
+
+换句话说，引发异常时，程序去向何处完全取决于异常在何处发生：这是脚本运行是控制流程的函数，而不仅仅是其语法。异常的传递，基本上就是回到处理先前进入但尚未离开的`try`。只要控制权碰到相符的`except`子句，传递就会停止，而通过`finally`子句时就不会。
+
+#### 例子：控制流程嵌套
+
+下例中可以看到，由于内层的`try`语句已经有`except`子句将异常捕获，所以没有传递至外层的`try`语句中：
+
+```python
+def action2():
+    print(1 + [])             # Generate TypeError
+
+def action1():
+    try:
+        action2()
+    except TypeError:         # Most recent matching try
+        print('inner try')
+
+try:
+    action1()
+except TypeError:             # Here, only if action1 re-raises
+    print('outer try')
+```
+
+
+```
+% python nestexc.py
+inner try
+```
+
+
+
+#### 例子：语法嵌套化
+
+```python
+try:
+    try:
+        action2()
+    except TypeError:        # Most recent matching try
+        print('inner try')
+except TypeError:            # Here, only if nested handler re-raises
+    print('outer try')
+```
+
+```python
+>>> try:
+...     try:
+...         raise IndexError
+...     finally:
+...         print('spam')
+... finally:
+...     print('SPAM')
+...
+spam
+SPAM
+Traceback (most recent call last):
+File "<stdin>", line 3, in <module>
+IndexError
+```
+
+有关语法嵌套更有用的例子，可以考虑下面的文件`except-finally.py`：
+
+```python
+# except-finally.py
+
+def raise1(): raise IndexError
+def noraise(): return
+def raise2(): raise SyntaxError
+    
+for func in (raise1, noraise, raise2):
+    print('<%s>' % func.__name__)
+    try:
+        try:
+            func()
+        except IndexError:
+            print('caught IndexError')
+    finally:
+        print('finally run')
+    print('...')
+```
+
+```
+% python except-finally.py
+<raise1>
+caught IndexError
+finally run
+...
+<noraise>
+finally run
+...
+<raise2>
+finally run
+Traceback (most recent call last):
+  File "except-finally.py", line 9, in <module>
+    func()
+  File "except-finally.py", line 3, in raise2
+    def raise2(): raise SyntaxError
+SyntaxError: None
+```
+
+
+
+### 36.2 异常的习惯用法
+
+#### Breaking Out of Multiple Nested Loops: “go to”
+
+```python
+>>> class Exitloop(Exception): pass
+...
+>>> try:
+...     while True:
+...         while True:
+...             for i in range(10):
+...                 if i > 3: raise Exitloop # break exits just one level
+...                 print('loop3: %s' % i)
+...             print('loop2')
+...         print('loop1')
+... except Exitloop:
+...     print('continuing') # Or just pass, to move on
+...
+loop3: 0
+loop3: 1
+loop3: 2
+loop3: 3
+continuing
+>>> i
+4
+```
+
+
+
+#### 异常不总是错误
+
+在Python中，所有错误都是异常，但不是所有异常都是错误。Python有一些类似信号的内置异常代表警告，而不是错误。
+
+#### 函数信号条件和`raise`
+
+用户定义的异常也用来引发函数信号，而不是返回调用者状态标志。
+
+#### 关闭文件和服务器连接
+
+#### 在`try`外进行调试
+
+可以利用异常处理器，取代Python的默认顶层异常处理行为。在顶层代码中的外层`try`中包装整个程序（或对它调用），就可以捕捉任何程序执行时会发生的异常，因此可破坏默认的程序终止行为。
+
+
+
+### 36.3 异常设计建议和陷阱
+
+
+
+### 36.4 核心语言总结
