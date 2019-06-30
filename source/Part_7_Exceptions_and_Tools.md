@@ -1340,16 +1340,170 @@ continuing
 
 用户定义的异常也用来引发函数信号，而不是返回调用者状态标志。
 
+```python
+class Found(Exception): pass
+
+def searcher():
+    if ...success...:
+        raise Found()  # Raise exceptions instead of returning flags
+    else:
+        return
+        
+try:
+    searcher()
+except Found:              # Exception if item was found
+    ...success...
+else:                      # else returned: not found
+    ...failure...
+```
+
+
+
+```python
+class Failure(Exception): pass
+
+def searcher():
+    if ...success...:
+        return ...founditem...
+    else:
+        raise Failure()
+            
+try:
+    item = searcher()
+except Failure:
+    ...not found...
+else:
+    ...use item here...
+```
+
+
+
 #### 关闭文件和服务器连接
+
+```python
+myfile = open(r'C:\code\textdata', 'w')
+try:
+    ...process myfile...
+finally:
+    myfile.close()
+```
+
+```python
+with open(r'C:\code\textdata', 'w') as myfile:
+    ...process myfile...
+```
+
+
 
 #### 在`try`外进行调试
 
 可以利用异常处理器，取代Python的默认顶层异常处理行为。在顶层代码中的外层`try`中包装整个程序（或对它调用），就可以捕捉任何程序执行时会发生的异常，因此可破坏默认的程序终止行为。
 
+```python
+try:
+    ...run program...
+except: # All uncaught exceptions come here
+    import sys
+    print('uncaught!', sys.exc_info()[0], sys.exc_info()[1])
+```
+
+#### 运行进程中的测试
+
+```python
+import sys
+log = open('testlog', 'a')
+from testapi import moreTests, runNextTest, testName
+def testdriver():
+    while moreTests():
+        try:
+            runNextTest()
+        except:
+            print('FAILED', testName(), sys.exc_info()[:2], file=log)
+        else:
+            print('PASSED', testName(), file=log)
+testdriver()
+```
+
+#### 关于`sys.exc_info`
+
+当使用空的`except`子句来捕获每个异常以确定引发了什么的时候，`sys.exc_info`函数允许一个异常处理器获取对最近引发的异常的访问。
+
+如果没有处理器正在处理，就返回包括了3个`None`的元组；如果有处理器正在处理异常，就会返回：
+
+- type：正在处理的异常的异常类型；
+- value：引发的异常类实例；
+- traceback：是一个`traceback`对象，代表异常最初发生时所调用的堆栈。
+
+```python
+>>> try:
+...     raise KeyboardInterrupt
+... except:
+...     import sys
+...     print(sys.exc_info())
+...
+(<class 'KeyboardInterrupt'>, KeyboardInterrupt(), <traceback object at 0x7f3b93a86788>)
+```
+
+#### 显示错误和Tracebacks
+
+`sys.exc_info`返回结果中的异常追踪对象`traceback`可被标准库模块`traceback`用来手动地生成标准错误消息和栈显示：
+
+```python
+# badly.py
+
+import traceback
+
+def inverse(x):
+    return 1 / x
+
+try:
+    inverse(0)
+except Exception:
+    traceback.print_exc(file=open('badly.exc', 'w'))
+print('Bye')
+```
+
+```
+c:\code> python badly.py
+Bye
+c:\code> type badly.exc
+Traceback (most recent call last):
+File "badly.py", line 7, in <module>
+inverse(0)
+File "badly.py", line 4, in inverse
+return 1 / x
+ZeroDivisionError: division by zero
+```
+
 
 
 ### 36.3 异常设计建议和陷阱
 
+#### 什么应该被包装
 
+#### 避免使用空`except`和`Exception`
+
+#### 使用基于类的异常分类
 
 ### 36.4 核心语言总结
+
+#### Python工具集
+
+一般而言，Python提供了一个有层次的工具集：
+
+- 内置工具：像字符串、列表以及字典这些内置类型。
+- Python扩展：就更重要的任务来说，你可以编写自己的函数、模块以及类，来扩展Python。
+- 已编译的扩展：Python也可以使用C或C++这样的外部语言所编写的模块进行扩展。
+
+#### 大型项目的开发工具
+
+- PyDoc和文档字符串
+- PyChecker和PyLint
+- PyUnit（unittest）
+- doctest
+- IDE
+- 配置工具
+  - `profile`模块
+- 调试器
+- 发布工具：`py2exe`，`PyInstaller`，eggs打包
+
