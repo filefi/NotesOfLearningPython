@@ -64,12 +64,61 @@ Python 3.X实现了字符串和Unicode的结合，但很多程序仍然需要处
 - 如果你要处理的内容实质是文本的内容，例如程序输出、HTML、国际化文本或
   CSV或XML文件，可能要使用`str`和文本模式文件。
 
-注意：内置函数`open`的模式字符串参数（函数的第二个参数）在Python 3.0中变得至关
-重要，因为其内容不仅指定了一个文件处理模式，而且暗示了一个Python对象类型。例如，模式`rb`、`wb`和`rb+`暗示`bytes`，而`r`、`w+`和`rt`暗示`str`。
+注意：内置函数`open`的模式字符串参数（函数的第二个参数）在Python 3.0中变得至关重要，因为其内容不仅指定了一个文件处理模式，而且暗示了一个Python对象类型。例如，模式`rb`、`wb`和`rb+`暗示`bytes`，而`r`、`w+`和`rt`暗示`str`。
 
 ### 37.3 编写基础字符串
 
+#### Python 3.X中的字符串常量
 
+Python 3.X中，所有当前字符串常量形式，'xxx',"xxx"和三引号字符串块，都产生一个`str`；在它们任何一种前面添加一个`b`或`B`，则会创建一个`bytes`。
+
+```python
+C:\code> C:\python33\python
+>>> B = b'spam'                   # 3.X bytes literal make a bytes object (8-bit bytes)
+>>> S = 'eggs'                    # 3.X str literal makes a Unicode text string
+>>> type(B), type(S)
+(<class 'bytes'>, <class 'str'>)
+>>> B                             # bytes: sequence of int, prints as character string
+b'spam'
+>>> S
+'eggs'
+```
+
+`bytes`对象实际上是较小的整数的一个序列，尽管它尽可能地将自己的内容打印成字符：
+
+```python
+>>> B[0], S[0] # Indexing returns an int for bytes, str for str
+(115, 'e')
+>>> B[1:], S[1:] # Slicing makes another bytes or str object
+(b'pam', 'ggs')
+>>> list(B), list(S)
+([115, 112, 97, 109], ['e', 'g', 'g', 's']) # bytes is really 8-bit small ints
+```
+
+就像`str`一样，`bytes`对象是不可修改的：
+
+```python
+>>> B[0] = 'x' # Both are immutable
+TypeError: 'bytes' object does not support item assignment
+>>> S[0] = 'x'
+TypeError: 'str' object does not support item assignment
+```
+
+`bytes`前缀对于单引号，双引号和三引号字符串常量都有效：
+
+```python
+>>> # bytes prefix works on single, double, triple quotes, raw
+>>> B = B"""
+... xxxx
+... yyyy
+... """
+>>> B
+b'\nxxxx\nyyyy\n'
+```
+
+
+
+##### Python 3.3 中的Python 2.X Unicode 常量
 
 
 
