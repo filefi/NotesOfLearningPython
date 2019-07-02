@@ -120,11 +120,174 @@ b'\nxxxx\nyyyy\n'
 
 ##### Python 3.3 中的Python 2.X Unicode 常量
 
+在Python 2.6中，为了兼容性而使用`b'xxx'`，但是它与`'xxx'`是相同的，并且产生一个`str`，并且，`bytes`只是`str`的同义词：
+
+```python
+C:\code> C:\python33\python
+>>> U = u'spam' # 2.X Unicode literal accepted in 3.3+
+>>> type(U) # It is just str, but is backward compatible
+<class 'str'>
+>>> U
+'spam'
+>>> U[0]
+'s'
+>>> list(U)
+['s', 'p', 'a', 'm']
+```
+
+
+
+#### 字符串类型转换
+
+Python 3.X中，`str`和`bytes`类型对象不在表达式中自动地混合，并且当传递给函数的时候不会自动地相互转换。期待一个`str`对象作为参数的函数，通常不能接受一个`bytes`；反之亦然。
+
+因此，Python 3.0基本上要求遵守一种类型或另一种类型，或者手动执行显式转换：
+
+- `str.encode()`和`bytes(S, encoding)`把一个字符串转换为其raw bytes形式，并且
+  在此过程中根据一个`str`创建一个`bytes`。
+- `bytes.decode()`和`str(B, encoding)`把raw bytes转换为其字符串形式，并且在此
+  过程中根据一个`bytes`创建一个`str`。
+
+```python
+>>> S = 'eggs'
+>>> S.encode()                 # str->bytes: encode text into raw bytes
+b'eggs'
+>>> bytes(S, encoding='ascii') # str->bytes, alternative
+b'eggs'
+>>> B = b'spam'
+>>> B.decode()                 # bytes->str: decode raw bytes into text
+'spam'
+>>> str(B, encoding='ascii')   # bytes->str, alternative
+'spam'
+```
+
+```python
+>>> import sys
+>>> sys.platform                  # Underlying platform
+'win32'
+>>> sys.getdefaultencoding()      # Default encoding for str here
+'utf-8'
+>>> bytes(S)
+TypeError: string argument without an encoding
+>>> str(B)                        # str without encoding
+"b'spam'"                         # A print string, not conversion!
+>>> len(str(B))
+7
+>>> len(str(B, encoding='ascii')) # Use encoding to convert to str
+4
+```
+
 
 
 ### 37.4 编写 Unicode 字符串
 
+Python的字符串常量支持"\xNN"十六进制字节值转义以及"\uNNNN"和"\UNNNNNNNN" Unicode转义。在Unicode转义中，第一种形式给出了4个十六进制位以编码1个2字节（16位）字符码，而第二种形式给出8个十六进制位表示4字节（32位）代码。
 
+#### 编写ASCII文本
+
+ASCII文本是一种简单的Unicode，存储为表示字符的字节值的一个序列：
+
+```python
+C:\misc> c:\python30\python
+>>> ord('X')            # 'X' has binary value 88 in the default encoding
+88
+>>> chr(88)             # 88 stands for character 'X'
+'X'
+>>> S = 'XYZ'           # A Unicode string of ASCII text
+>>> S
+'XYZ'
+>>> len(S)              # 3 characters long
+3
+>>> [ord(c) for c in S] # 3 bytes with integer ordinal values
+[88, 89, 90]
+```
+
+#### 编写非ASCII文本
+
+```python
+>>> chr(0xc4) # 0xC4, 0xE8: characters outside ASCII's range
+'Ä'
+>>> chr(0xe8)
+'è'
+>>> S = '\xc4\xe8' # Single byte 8-bit hex escapes
+>>> S
+'Äè'
+>>> S = '\u00c4\u00e8' # 16-bit Unicode escapes
+>>> S
+'Äè'
+>>> len(S) # 2 characters long (not number of bytes!)
+2
+```
+
+#### 编码和解码非ASCII文本
+
+```python
+>>> S = '\u00c4\u00e8'
+>>> S
+'Äè'
+>>> len(S)
+2
+>>> S.encode('ascii')
+UnicodeEncodeError: 'ascii' codec can't encode characters in position 0-1:
+ordinal not in range(128)
+>>> S.encode('latin-1')      # One byte per character
+b'\xc4\xe8'
+>>> S.encode('utf-8')        # Two bytes per character
+b'\xc3\x84\xc3\xa8'
+>>> len(S.encode('latin-1')) # 2 bytes in latin-1, 4 in utf-8
+2
+>>> len(S.encode('utf-8'))
+4
+```
+
+也可以从一个文件读入raw字节并且将其解码回一个Unicode字符串：
+
+```python
+>>> B = b'\xc4\xe8' # Text encoded per Latin-1
+>>> B
+b'\xc4\xe8'
+>>> len(B) # 2 raw bytes, two encoded characters
+2
+>>> B.decode('latin-1') # Decode to text per Latin-1
+'Äè'
+>>> B = b'\xc3\x84\xc3\xa8' # Text encoded per UTF-8
+>>> len(B) # 4 raw bytes, two encoded characters
+4
+>>> B.decode('utf-8') # Decode to text per UTF-8
+'Äè'
+>>> len(B.decode('utf-8')) # Two Unicode characters in memory
+2
+```
+
+#### 转换编码
+
+可以把一个字符串转换为不同于源字符集默认的一种编码，但必须显式地提供一个编码名称以进行编码和解码：
+
+```python
+>>> S = 'AÄBèC'
+>>> S
+'AÄBèC'
+>>> S.encode() # Default utf-8 encoding
+b'A\xc3\x84B\xc3\xa8C'
+>>> T = S.encode('cp500') # Convert to EBCDIC
+>>> T
+b'\xc1c\xc2T\xc3'
+>>> U = T.decode('cp500') # Convert back to Unicode
+>>> U
+'AÄBèC'
+>>> U.encode() # Default utf-8 encoding again
+b'A\xc3\x84B\xc3\xa8C'
+```
+
+记住，只有当手动编写非ASCII Unicode的时候，才必须用到特殊的Unicode和十六进制
+字符转义
+
+#### 源文件字符集编码声明
+
+对于在脚本文件中编码的字符串，Python默认地使用UTF-8编码，但是，它允许我们通过包含一个注释来指明想要的编码，从而将默认值修改为支持任意的字符集。这个注释必须拥有如下的形式，并且在Python 2.X或Python 3.X中必须作为脚本的第一行或第二行出现：
+```python
+-*- coding: latin-1 -*-
+```
 
 
 
