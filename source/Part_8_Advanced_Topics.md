@@ -293,19 +293,312 @@ b'A\xc3\x84B\xc3\xa8C'
 
 ### 37.5 使用 3.X `bytes` 对象
 
+#### 方法调用
 
+```python
+>>> B = b'spam'             # b'...' bytes literal
+>>> B.find(b'pa')
+1
+>>> B.replace(b'pa', b'XY') # bytes methods expect bytes arguments
+b'sXYm'
+>>> B.split(b'pa')          # bytes methods return bytes results
+[b's', b'm']
+>>> B
+b'spam'
+>>> B[0] = 'x'              # bytes objects are immutable
+TypeError: 'bytes' object does not support item assignment
+```
+
+字符串格式化在Python 3.X中只对`str`有效，对`bytes`无效：
+
+```python
+>>> '%s' % 99
+'99'
+>>> b'%s' % 99
+TypeError: unsupported operand type(s) for %: 'bytes' and 'int'
+>>> '{0}'.format(99)
+'99'
+>>> b'{0}'.format(99)
+AttributeError: 'bytes' object has no attribute 'format'
+```
+
+#### 序列操作
+
+```python
+>>> B = b'spam' # A sequence of small ints
+>>> B # Prints as ASCII characters (and/or hex escapes)
+b'spam'
+>>> B[0] # Indexing yields an int
+115
+>>> B[-1]
+109
+>>> chr(B[0]) # Show character for int
+'s'
+>>> list(B) # Show all the byte's int values
+[115, 112, 97, 109]
+>>> B[1:], B[:-1]
+(b'pam', b'spa')
+>>> len(B)
+4
+>>> B + b'lmn'
+b'spamlmn'
+>>> B * 4
+b'spamspamspamspam'
+```
+
+#### 创建bytes对象的其他方式
+
+```python
+>>> B = b'abc'                    # Literal
+>>> B
+b'abc'
+>>> B = bytes('abc', 'ascii')     # Constructor with encoding name
+>>> B
+b'abc'
+>>> ord('a')
+97
+>>> B = bytes([97, 98, 99])       # Integer iterable
+>>> B
+b'abc'
+>>> B = 'spam'.encode()           # str.encode() (or bytes())
+>>> B
+b'spam'
+>>>
+>>> S = B.decode()                # bytes.decode() (or str())
+>>> S
+'spam'
+```
+
+#### 混合字符串类型
+
+```python
+# Must pass expected types to function and method calls
+>>> B = b'spam'
+>>> B.replace('pa', 'XY')
+TypeError: expected an object with the buffer interface
+>>> B.replace(b'pa', b'XY')
+b'sXYm'
+>>> B = B'spam'
+>>> B.replace(bytes('pa'), bytes('xy'))
+TypeError: string argument without an encoding
+>>> B.replace(bytes('pa', 'ascii'), bytes('xy', 'utf-8'))
+b'sxym'
+
+# Must convert manually in 3.X mixed-type expressions
+>>> b'ab' + 'cd'
+TypeError: can't concat bytes to str
+>>> b'ab'.decode() + 'cd' # bytes to str
+'abcd'
+>>> b'ab' + 'cd'.encode() # str to bytes
+b'abcd'
+>>> b'ab' + bytes('cd', 'ascii') # str to bytes
+b'abcd'
+```
 
 
 
 ### 37.6 使用 3.X/2.6+ `bytearray` 对象
 
+```python
+# Creation in 3.X: text/binary do not mix
+>>> S = 'spam'
+>>> C = bytearray(S)
+TypeError: string argument without an encoding
+>>> C = bytearray(S, 'latin1') # A content-specific type in 3.X
+>>> C
+bytearray(b'spam')
+>>> B = b'spam' # b'..' != '..' in 3.X (bytes/str)
+>>> C = bytearray(B)
+>>> C
+bytearray(b'spam')
+```
 
+创建之后，可以像列表一样修改：
+
+```python
+# Mutable, but must assign ints, not strings
+>>> C[0]
+115
+>>> C[0] = 'x' # This and the next work in 2.6/2.7
+TypeError: an integer is required
+>>> C[0] = b'x'
+TypeError: an integer is required
+>>> C[0] = ord('x') # Use ord() to get a character's ordinal
+>>> C
+bytearray(b'xpam')
+>>> C[1] = b'Y'[0] # Or index a byte string
+>>> C
+bytearray(b'xYam')
+```
+
+处理`bytearray`对象可以使用字符串和列表的方法：
+
+```python
+# Mutable method calls
+>>> C
+bytearray(b'xYam')
+>>> C.append(b'LMN') # 2.X requires string of size 1
+TypeError: an integer is required
+>>> C.append(ord('L'))
+>>> C
+bytearray(b'xYamL')
+>>> C.extend(b'MNO')
+>>> C
+bytearray(b'xYamLMNO')
+```
+
+所有常见的序列操作和字符串方法都在`bytearray`上有效：
+
+```python
+# Sequence operations and string methods
+>>> C
+bytearray(b'xYamLMNO')
+>>> C + b'!#'
+bytearray(b'xYamLMNO!#')
+>>> C[0]
+120
+>>> C[1:]
+bytearray(b'YamLMNO')
+>>> len(C)
+8
+>>> C.replace('xY', 'sp') # This works in 2.X
+TypeError: Type str doesn't support the buffer API
+>>> C.replace(b'xY', b'sp')
+bytearray(b'spamLMNO')
+>>> C
+bytearray(b'xYamLMNO')
+>>> C * 4
+bytearray(b'xYamLMNOxYamLMNOxYamLMNOxYamLMNO')
+```
+
+最后，下面例子展示了`bytes`和`bytearray`对象是`int`的序列，而`str`对象是字符的序列：
+
+```python
+# Binary versus text
+>>> B # B is same as S in 2.6/2.7
+b'spam'
+>>> list(B)
+[115, 112, 97, 109]
+>>> C
+bytearray(b'xYamLMNO')
+>>> list(C)
+[120, 89, 97, 109, 76, 77, 78, 79]
+>>> S
+'spam'
+>>> list(S)
+['s', 'p', 'a', 'm']
+```
 
 
 
 ### 37.7 使用文本和二进制文件
 
+**文本模式意味着`str`对象，二进制模式意味着`bytes`对象：**
 
+- ***文本模式文件*** 根据Unicode编码来解释文件内容，要么是平台的默认编码，要么是我们传递进的编码名。通过传递一个编码名来打开文件，我们可以强行进行Unicode文件的各种类型的转换。文本模型的文件也执行通用的行末转换：默认地，所有的行末形式映射为脚本中的一个单个的'\n'字符，而不管在什么平台上运行。正如前面所描述的，文本文件也负责阅读和写入在某些Unicode编码方案中存储文件开始处的字节顺序标记（Byte Order Mark，BOM）。
+- ***二进制模式文件*** 不会返回原始的文件内容，而是作为表示字节值的整数的一个序列，没有编码或解码，也没有行末转换。
+
+#### 文本文件基础
+
+```python
+C:\code> C:\python33\python
+# Basic text files (and strings) work the same as in 2.X
+>>> file = open('temp', 'w')
+>>> size = file.write('abc\n') # Returns number of characters written
+>>> file.close() # Manual close to flush output buffer
+>>> file = open('temp') # Default mode is "r" (== "rt"): text input
+>>> text = file.read()
+>>> text
+'abc\n'
+>>> print(text)
+abc
+```
+
+#### Python 3.X中的文本和二进制模式
+
+Python 3.X文本模式：
+
+```python
+C:\code> C:\python33\python
+# Write and read a text file
+>>> open('temp', 'w').write('abc\n') # Text mode output, provide a str
+4
+>>> open('temp', 'r').read() # Text mode input, returns a str
+'abc\n'
+>>> open('temp', 'rb').read() # Binary mode input, returns a bytes
+b'abc\r\n'
+```
+
+Python 3.X二进制模式：
+
+```python
+# Write and read a binary file
+>>> open('temp', 'wb').write(b'abc\n') # Binary mode output, provide a bytes
+4
+>>> open('temp', 'r').read() # Text mode input, returns a str
+'abc\n'
+>>> open('temp', 'rb').read() # Binary mode input, returns a bytes
+b'abc\n'
+```
+
+```python
+# Write and read truly binary data
+>>> open('temp', 'wb').write(b'a\x00c') # Provide a bytes
+3
+>>> open('temp', 'r').read() # Receive a str
+'a\x00c'
+>>> open('temp', 'rb').read() # Receive a bytes
+b'a\x00c'
+```
+
+实际上，Python 3.X中的大多数API接受一个`bytes`，也允许一个`bytearray`：
+
+```python
+# bytearrays work too
+>>> BA = bytearray(b'\x01\x02\x03')
+>>> open('temp', 'wb').write(BA)
+3
+>>> open('temp', 'r').read()
+'\x01\x02\x03'
+>>> open('temp', 'rb').read()
+b'\x01\x02\x03'
+```
+
+#### 类型和内容错误匹配
+
+如果试图向一个文本文件写入一个`bytes`或者向二进制文件写入一个`str`，将会得到错误：
+
+```python
+# Types are not flexible for file content
+>>> open('temp', 'w').write('abc\n') # Text mode makes and requires str
+4
+>>> open('temp', 'w').write(b'abc\n')
+TypeError: can't write bytes to text stream
+>>> open('temp', 'wb').write(b'abc\n') # Binary mode makes and requires bytes
+4
+>>> open('temp', 'wb').write('abc\n')
+TypeError: can't write str to binary stream
+```
+
+在Python 3.X中，文本模式的输入文件需要一个`str`而不是一个`bytes`用于内容，因此，在Python 3.X中，没有方法把真正的二进制数据写入一个文本模式文件中；由于Python 3.X中的文本模式输入文件必须能够针对每个Unicode编码来解码内容，因此，没有办法在文本模式中读取真正的二进制数据：
+
+```python
+# Can't read truly binary data in text mode
+>>> chr(0xFF) # FF is a valid char, FE is not
+'ÿ'
+>>> chr(0xFE)
+UnicodeEncodeError: 'charmap' codec can't encode character '\xfe' in position 1...
+>>> open('temp', 'w').write(b'\xFF\xFE\xFD') # Can't use arbitrary bytes!
+TypeError: can't write bytes to text stream
+>>> open('temp', 'w').write('\xFF\xFE\xFD') # Can write if embeddable in str
+3
+>>> open('temp', 'wb').write(b'\xFF\xFE\xFD') # Can also write in binary mode
+3
+>>> open('temp', 'rb').read() # Can always read as binary bytes
+b'\xff\xfe\xfd'
+>>> open('temp', 'r').read() # Can't read text unless decodable!
+UnicodeEncodeError: 'charmap' codec can't encode characters in position 2-3: ...
+```
 
 
 
