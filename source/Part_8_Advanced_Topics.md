@@ -604,11 +604,198 @@ UnicodeEncodeError: 'charmap' codec can't encode characters in position 2-3: ...
 
 ### 37.8 使用Unicode文件
 
+#### 在Python 3.X中读取和写入Unicode
 
+在Python 3.X中，有两种办法可以把字符串转换为不同的编码：
+
+- 用方法调用手动地转换
+- 在文件输入输出上自动地转换
+
+##### 手动编码
+
+```python
+C:\misc> c:\python30\python
+>>> S = 'A\xc4B\xe8C' # 5-character string, non-ASCII
+>>> S
+'AÄBèC'
+>>> len(S)
+5
+# Encode manually with methods
+>>> L = S.encode('latin-1') # 5 bytes when encoded as latin-1
+>>> L
+b'A\xc4B\xe8C'
+>>> len(L)
+5
+>>> U = S.encode('utf-8') # 7 bytes when encoded as utf-8
+>>> U
+b'A\xc3\x84B\xc3\xa8C'
+>>> len(U)
+7
+```
+
+##### 文件输入输出自动转换
+
+###### 文件输出编码
+
+```python
+# Encoding automatically when written
+>>> open('latindata', 'w', encoding='latin-1').write(S) # Write as latin-1
+5
+>>> open('utf8data', 'w', encoding='utf-8').write(S) # Write as utf-8
+5
+>>> open('latindata', 'rb').read() # Read raw bytes
+b'A\xc4B\xe8C'
+>>> open('utf8data', 'rb').read() # Different in files
+b'A\xc3\x84B\xc3\xa8C'
+```
+
+###### 文件输入编码
+
+```python
+# Decoding automatically when read
+>>> open('latindata', 'r', encoding='latin-1').read() # Decoded on input
+'AÄBèC'
+>>> open('utf8data', 'r', encoding='utf-8').read() # Per encoding type
+'AÄBèC'
+>>> X = open('latindata', 'rb').read() # Manual decoding:
+>>> X.decode('latin-1') # Not necessary
+'AÄBèC'
+>>> X = open('utf8data', 'rb').read()
+>>> X.decode() # UTF-8 is default
+'AÄBèC'
+```
+
+###### 解码错误匹配
+
+试图以文本模式打开一个真正的二进制数据文件，即便使用了正确的对象类型，也不可能在Python 3.X中有效：
+
+```python
+>>> file = open(r'C:\Python33\python.exe', 'r')
+>>> text = file.read()
+UnicodeDecodeError: 'charmap' codec can't decode byte 0x90 in position 2: ...
+>>> file = open(r'C:\Python33\python.exe', 'rb')
+>>> data = file.read()
+>>> data[:20]
+b'MZ\x90\x00\x03\x00\x00\x00\x04\x00\x00\x00\xff\xff\x00\x00\xb8\x00\x00\x00'
+```
+
+#### 在Python 3.X中处理BOM
+
+一些编码方式在文件的开始处存储了一个特殊的字节顺序标记（BOM）序列，来指定数据的大小尾方式或声明编码类型。如果编码名暗示了BOM的时候，Python在输入和将其写入输出的时候都会忽略该标记，但是有时候必须使用一个特定的编码名称来迫使显式地处理BOM。
+
+当用Python代码写入一个Unicode文件，我们需要一个更加显式的编码名称来强迫UTF-8中带有BOM——“utf-8”不会写入（或忽略）BOM，但“utf-8-sig”会这么做：
+
+```python
+>>> open('temp.txt', 'w', encoding='utf-8').write('spam\nSPAM\n')
+10
+>>> open('temp.txt', 'rb').read() # No BOM
+b'spam\r\nSPAM\r\n'
+>>> open('temp.txt', 'w', encoding='utf-8-sig').write('spam\nSPAM\n')
+10
+>>> open('temp.txt', 'rb').read() # Wrote BOM
+b'\xef\xbb\xbfspam\r\nSPAM\r\n'
+>>> open('temp.txt', 'r').read()
+'ï>>¿spam\nSPAM\n'
+>>> open('temp.txt', 'r', encoding='utf-8').read() # Keeps BOM
+'\ufeffspam\nSPAM\n'
+>>> open('temp.txt', 'r', encoding='utf-8-sig').read() # Skips BOM
+'spam\nSPAM\n'
+```
+
+注意，尽管“utf-8”没有抛弃BOM，但不带BOM的数据可以用“utf-8”和“utf-8-sig”读取——如果你不确定一个文件中是否有BOM，使用后者进行输入：
+```python
+>>> open('temp.txt', 'w').write('spam\nSPAM\n')
+>>> 10
+>>> open('temp.txt', 'rb').read() # Data without BOM
+>>> b'spam\r\nSPAM\r\n'
+>>> open('temp.txt', 'r').read() # Any utf-8 works
+>>> 'spam\nSPAM\n'
+>>> open('temp.txt', 'r', encoding='utf-8').read()
+>>> 'spam\nSPAM\n'
+>>> open('temp.txt', 'r', encoding='utf-8-sig').read()
+>>> 'spam\nSPAM\n'
+```
+
+#### Unicode文件名和流
+
+第五版，暂略
 
 
 
 ### 37.9 Python 3.X 中其他字符串工具的变化
+
+#### re模块匹配模块
+
+```python
+C:\code> C:\python33\python
+>>> import re
+>>> S = 'Bugger all down here on earth!' # Line of text
+>>> B = b'Bugger all down here on earth!' # Usually from a file
+>>> re.match('(.*) down (.*) on (.*)', S).groups() # Match line to pattern
+('Bugger all', 'here', 'earth!') # Matched substrings
+>>> re.match(b'(.*) down (.*) on (.*)', B).groups() # bytes substrings
+(b'Bugger all', b'here', b'earth!')
+```
+
+但是，注意，像在其他的API中一样，我们不能在Python 3.0调用的参数中混合`str`和`bytes`类型：
+
+```python
+C:\code> C:\python33\python
+>>> import re
+>>> S = 'Bugger all down here on earth!'
+>>> B = b'Bugger all down here on earth!'
+>>> re.match('(.*) down (.*) on (.*)', B).groups()
+TypeError: can't use a string pattern on a bytes-like object
+>>> re.match(b'(.*) down (.*) on (.*)', S).groups()
+TypeError: can't use a bytes pattern on a string-like object
+>>> re.match(b'(.*) down (.*) on (.*)', bytearray(B)).groups()
+(bytearray(b'Bugger all'), bytearray(b'here'), bytearray(b'earth!'))
+>>> re.match('(.*) down (.*) on (.*)', bytearray(B)).groups()
+TypeError: can't use a string pattern on a bytes-like object
+```
+
+
+
+#### Struct二进制数据模块
+
+Python 3.X的`struct`模块，用来从字符串创建和提取打包的二进制数据，打包的数据只是作为`bytes`和`bytearray`对象显示。
+
+下面是在Python的两个版本中的应用，它根据二进制类型声明把3个对象打包到一个字符串中（它们创建了一个4字节的整数、一个4字节的字符串和一个两字节的整数）：
+
+```python
+C:\code> C:\python33\python
+>>> from struct import pack
+>>> pack('>i4sh', 7, b'spam', 8) # bytes in 3.X (8-bit strings)
+b'\x00\x00\x00\x07spam\x00\x08'
+```
+
+```python
+C:\code> C:\python27\python
+>>> from struct import pack
+>>> pack('>i4sh', 7, 'spam', 8) # str in 2.X (8-bit strings)
+'\x00\x00\x00\x07spam\x00\x08'
+```
+
+
+
+#### pickle对象序列化模块
+
+`pickle`模块的Python 3.X版本总是创建一个`bytes`对象，而不管默认的或传入的“协议”（数据格式化层级）。我们通过使用该模块的`dumps`调用来返回一个对象的`pickle`字符串，从而查看这一点：
+
+```python
+C:\code> C:\python33\python
+>>> import pickle # dumps() returns pickle string
+>>> pickle.dumps([1, 2, 3]) # Python 3.X default protocol=3=binary
+b'\x80\x03]q\x00(K\x01K\x02K\x03e.'
+>>> pickle.dumps([1, 2, 3], protocol=0) # ASCII protocol 0, but still bytes!
+b'(lp0\nL1L\naL2L\naL3L\na.'
+```
+
+
+
+#### XML解析工具
+
+Python自身附带一个完整的XML解析工具包，所以它支持SAX和DOM解析模式，此外，还有一个名为ElementTree的包——这是特定于Python的专用于解析和构造XML的一个API。除了基本的解析，开源领域还提供了额外的XML工具，例如XPath、Xquery、XSLT，等等。
 
 
 
