@@ -832,17 +832,340 @@ Python自身附带一个完整的XML解析工具包，所以它支持SAX和DOM�
 
 一个 *特性（property）* 管理一个单个的、特定的属性；它允许我们控制访问和赋值操作，并且允许我们自由地把一个属性从简单的数据改变为一个计算，而不会影响已有的代码。
 
-特性和描述符有很大的关系，它们基本上是描述符的一种受限制的形式。
+**特性** 和 **描述符** 有很大的关系，它们基本上是描述符的一种受限制的形式。
 
 #### 基础知识
 
+可以通过把一个内置函数的结果赋给一个类属性来创建一个特性：
+```python
+attribute = property(fget, fset, fdel, doc)
+```
+
+这个内置函数的任何参数都不是必需的，如果没有传递参数，所有参数的默认值为`None`。如果前面3个参数，`None`意味着不支持相应的操作，并且尝试使用会自动引发一个`AttributeError`异常。
+
+当这3个参数被使用时，我们给`fget`传递一个函数来拦截属性的获取，给`fset`传递一个函数来进行赋值，给`fdel`传递一个函数来进行属性删除。技术上来讲，所有这3个参数可以接受任何可调用对象，包括类方法。当之后被调用时，`fget`函数返回计算过的属性值，`fset`和`fdel`无返回值（其实是返回`None`），并且所有这3个函数都可能引发异常来拒绝访问请求。
+
+如果提供了`doc`参数，该参数接收一个该属性的文档字符串；否则，特性（property）会复制`fget`函数的文档字符串（通常该字符串为`None`）。
+
+这个内置的函数调用返回一个特性对象，我们将它赋给在类的作用域中要管理的属性名称，它将被每个实例所继承。
+
+#### 第一个例子
+
+如下的类使用一个特性来记录对一个名为`name`的属性的访问，实际存储的数据名为`_name`，以便不会和特性搞混了：
+
+```python
+# prop-person.py
+
+class Person:                       # Add (object) in 2.X
+    def __init__(self, name):
+        self._name = name
+    def getName(self):
+        print('fetch...')
+        return self._name
+    def setName(self, value):
+        print('change...')
+        self._name = value
+    def delName(self):
+        print('remove...')
+        del self._name
+    name = property(getName, setName, delName, "name property docs")
+    
+bob = Person('Bob Smith')           # bob has a managed attribute
+print(bob.name)                     # Runs getName
+bob.name = 'Robert Smith'           # Runs setName
+print(bob.name)
+del bob.name                        # Runs delName
+
+print('-'*20)
+sue = Person('Sue Jones')           # sue inherits property too
+print(sue.name)
+print(Person.name.__doc__)          # Or help(Person.name)
+```
+
+当这段代码运行的时候，两个实例继承了该特性，就好像它们是附加到其类的另外两个属性一样。然而，捕获了它们的属性访问：
+
+```
+c:\code> py −3 prop-person.py
+fetch...
+Bob Smith
+change...
+fetch...
+Robert Smith
+remove...
+--------------------
+fetch...
+Sue Jones
+name property docs
+```
+
+就像所有的类属性一样，实例和较低的子类都继承特性。如果我们把例子修改为如下所示，则输出是同样的。
+
+```python
+class Super:
+    def __init__(self, name):
+        self._name = name
+    def getName(self):
+        print('fetch...')
+        return self._name
+    def setName(self, value):
+        print('change...')
+        self._name = value
+    def delName(self):
+        print('remove...')
+        del self._name
+    name = property(getName, setName, delName, "name property docs")
+    
+class Person(Super):
+    pass # Properties are inherited (class attrs)
+
+bob = Person('Bob Smith')           # bob has a managed attribute
+print(bob.name)                     # Runs getName
+bob.name = 'Robert Smith'           # Runs setName
+print(bob.name)
+del bob.name                        # Runs delName
+
+print('-'*20)
+sue = Person('Sue Jones')           # sue inherits property too
+print(sue.name)
+print(Person.name.__doc__)          # Or help(Person.name)
+```
+
+关于继承，特性的方式和常规方法是一样的；由于它们能够访问`self`实例参数，所以能够访问实例状态信息和方法，而不用考虑子类的深度。
+
+#### 计算的属性（Computed Attributes）
+
+通常特性可以更多事情。例如，当获取属性的时候，动态地计算属性的值。下面的例子展示了这一点：
+
+```python
+class PropSquare:
+    def __init__(self, start):
+        self.value = start
+    def getX(self):             # On attr fetch
+        return self.value ** 2
+    def setX(self, value):      # On attr assign
+        self.value = value
+    X = property(getX, setX)    # No delete or docs
+    
+P = PropSquare(3)  # Two instances of class with property
+Q = PropSquare(32) # Each has different state information
+
+print(P.X)         # 3 ** 2
+P.X = 4
+print(P.X)         # 4 ** 2
+print(Q.X)         # 32 ** 2 (1024)
+```
+
+注意，我们已经创建了两个不同的实例——因为特性方法自动地接收一个`self`参数，所以它们都访问了存储在实例中的状态信息。
+
+#### 使用装饰器编写特性
+
+内置函数`property`可以充当一个装饰器，来定义一个函数，当获取一个属性的时候自动运行该函数：
+
+```python
+class Person:
+    @property
+    def name(self): ... # Rebinds: name = property(name)
+```
+
+运行的时候，装饰的方法自动传递给`property`内置函数的第一个参数。这其实只是创建一个特性并手动绑定属性名的一种替代语法：
+
+```python
+class Person:
+    def name(self): ...
+    name = property(name)
+```
+
+对于Python 2.6和3.0，property对象也有`getter`、`setter`和`deleter`方法，这些方法指定相应的特性访问器方法，以及返回特性自身的一个副本。我们也可以使用这些方法，通过装饰常规方法来指定特性的组成部分，尽管`getter`部分通常由创建特性自身的行为自动填充：
+
+```python
+# prop-person-deco.py
+
+class Person:
+    def __init__(self, name):
+        self._name = name
+
+    @property
+    def name(self): # name = property(name)
+        "name property docs"
+        print('fetch...')
+        return self._name
+
+    @name.setter
+    def name(self, value): # name = name.setter(name)
+        print('change...')
+        self._name = value
+
+    @name.deleter
+    def name(self): # name = name.deleter(name)
+        print('remove...')
+        del self._name
+
+bob = Person('Bob Smith') # bob has a managed attribute
+print(bob.name) # Runs name getter (name 1)
+bob.name = 'Robert Smith' # Runs name setter (name 2)
+print(bob.name)
+del bob.name # Runs name deleter (name 3)
+
+print('-'*20)
+sue = Person('Sue Jones') # sue inherits property too
+print(sue.name)
+print(Person.name.__doc__) # Or help(Person.name)
+```
+
+实际上，这段代码等同于本小节的第一个示例——在这个例子中，装饰只是编写特性的一种替代方法。当运行这段代码时，结果是相同的：
+
+```
+c:\code> py −3 prop-person-deco.py
+fetch...
+Bob Smith
+change...
+fetch...
+Robert Smith
+remove...
+--------------------
+fetch...
+Sue Jones
+name property docs
+```
 
 
 
 
-### 38.3 描述器（Descriptors）
+### 38.3 描述符（Descriptors）
+
+**描述符**提供了拦截属性访问的一种替代方法。实际上，**特性**是一种**描述符**。从技术上讲，`property`内置函数只是创建一个特定类型的描述符的一种简化方式，而这种描述符在属性访问时运行方法函数。
+
+从功能上讲，描述符协议允许我们把一个特定属性的 get 和 set 操作指向我们提供的一个单独类对象的方法：它们提供了一种方式来插入在访问属性的时候自动运行的代码，并且它们允许我们拦截属性删除并且为属性提供文档（如果愿意的话）。
 
 
+
+#### 基础知识
+
+描述符作为单独的类编写，并且针对想要拦截的属性访问操作提供特定命名的访问器方法——当以相应的方式访问分配给描述符类实例的属性时，描述符类中的获取、设置和删除等方法自动运行：
+
+```python
+class Descriptor:
+    "docstring goes here"
+    def __get__(self, instance, owner): ...    # Return attr value
+    def __set__(self, instance, value): ...    # Return nothing (None)
+    def __delete__(self, instance): ...        # Return nothing (None)
+```
+
+带有任何这些方法的类都可以看作是描述符。当描述符的一个实例分配给另一个类的属性后，如果属性被访问，会自动调用它们。如果这些方法中的任何一个空缺，通常意味着不支持相应类型的访问。然而，和特性不同，省略一个`__set__`意味着允许这个描述符的属性名称在一个实例中被重新定义。要使得一个属性是只读的，我们必须定义`__set__`来捕获赋值并引发一个异常。
+
+
+
+##### 描述符方法参数
+
+所有3种描述符方法，都传递了描述符类实例（self）以及描述符实例所附加的客户类的实例（instance）。
+
+`__get__`访问方法还额外地接收一个`owner`参数，指定了描述符实例要附加到的客户类。
+
+```python
+>>> class Descriptor:          # Add "(object)" in 2.X
+        def __get__(self, instance, owner):
+            print(self, instance, owner, sep='\n')
+>>> class Subject:             # Add "(object)" in 2.X
+        attr = Descriptor()    # Descriptor instance is class attr
+>>> X = Subject()
+>>> X.attr
+<__main__.Descriptor object at 0x0281E690>
+<__main__.Subject object at 0x028289B0>
+<class '__main__.Subject'>
+>>> Subject.attr
+<__main__.Descriptor object at 0x0281E690>
+None
+<class '__main__.Subject'>
+```
+
+注意在第一个属性获取中自动传递到`__get__`方法中的参数，当获取`X.attr`的时候，就好像发生了如下的转换（尽管这里的`Subject.attr`没有再次调用`__get__`）：
+
+```python
+X.attr -> Descriptor.__get__(Subject.attr, X, Subject)
+```
+
+
+
+##### 只读描述符
+
+和特性不同，使用描述符直接忽略`__set__`方法不足以让属性成为只读的，因为可以通过给实例属性赋一个新的值，从而选择性地覆盖类对象中的属性。
+
+在下面的例子中，对`X.a`的属性赋值在实例对象`X`中存储了`a`，由此，隐藏了存储在类C中的描述符：
+
+```python
+>>> class D:
+        def __get__(*args): print('get')
+>>> class C:
+        a = D()   # Attribute a is a descriptor instance
+>>> X = C()
+>>> X.a           # Runs inherited descriptor __get__
+get
+>>> C.a
+get
+>>> X.a = 99      # Stored on X, hiding C.a!
+>>> X.a
+99
+>>> list(X.__dict__.keys())
+['a']
+>>> Y = C()
+>>> Y.a           # Y still inherits descriptor
+get
+>>> C.a
+get
+```
+
+要让基于描述符的属性成为只读的，捕获描述符类中的赋值并引发一个异常来阻止属性赋值——当要赋值的属性是一个描述符的时候，Python有效地绕过了常规实例层级的赋值行为，并且把操作指向描述符对象：
+
+```python
+>>> class D:
+        def __get__(*args): print('get')
+        def __set__(*args): raise AttributeError('cannot set')
+
+>>> class C:
+        a = D()
+
+>>> X = C()
+>>> X.a            # Routed to C.a.__get__
+get
+>>> X.a = 99       # Routed to C.a.__set__
+AttributeError: cannot set
+```
+
+#### 第一个实例
+
+
+
+```python
+# desc-person.py
+
+class Name: # Use (object) in 2.X
+    "name descriptor docs"
+    def __get__(self, instance, owner):
+        print('fetch...')
+        return instance._name
+    def __set__(self, instance, value):
+        print('change...')
+        instance._name = value
+    def __delete__(self, instance):
+        print('remove...')
+        del instance._name
+        
+class Person: # Use (object) in 2.X
+    def __init__(self, name):
+        self._name = name
+    name = Name()                       # Assign descriptor to attr
+    
+bob = Person('Bob Smith')               # bob has a managed attribute
+print(bob.name)                         # Runs Name.__get__
+bob.name = 'Robert Smith'               # Runs Name.__set__
+print(bob.name)
+del bob.name                            # Runs Name.__delete__
+
+print('-'*20)
+sue = Person('Sue Jones')               # sue inherits descriptor too
+print(sue.name)
+print(Name.__doc__)                     # Or help(Name)
+```
 
 
 
