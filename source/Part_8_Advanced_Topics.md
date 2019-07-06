@@ -1133,7 +1133,7 @@ AttributeError: cannot set
 
 #### 第一个实例
 
-
+如下代码定义了一个描述符，来拦截对其客户类中的名为`name`的一个属性的访问。其方法使用它们的`instance`参数来访问主体实例中的状态信息，其中指定了实际存储的名称字符串。
 
 ```python
 # desc-person.py
@@ -1153,7 +1153,7 @@ class Name: # Use (object) in 2.X
 class Person: # Use (object) in 2.X
     def __init__(self, name):
         self._name = name
-    name = Name()                       # Assign descriptor to attr
+    name = Name()                       # Assign descriptor to class's attr
     
 bob = Person('Bob Smith')               # bob has a managed attribute
 print(bob.name)                         # Runs Name.__get__
@@ -1166,6 +1166,113 @@ sue = Person('Sue Jones')               # sue inherits descriptor too
 print(sue.name)
 print(Name.__doc__)                     # Or help(Name)
 ```
+
+**注意，我们必须像这样把描述符赋给一个类属性——如果赋给一个`self`实例属性，它将无法工作。**
+
+当描述符的`__get__`方法运行的时候，它传递了3个对象来定义其上下文：
+
+- `self`是`Name`类实例
+- `instance`是`Person`类实例
+- `owner`是`Person`类实例
+
+当这段代码运行描述符的方法来拦截对该属性的访问的时候，和特性的版本具有相同的输出：
+
+```
+c:\code> py −3 desc-person.py
+fetch...
+Bob Smith
+change...
+fetch...
+Robert Smith
+remove...
+--------------------
+fetch...
+Sue Jones
+name descriptor docs
+```
+
+还和特性示例中相似，我们的描述符类实例是一个类属性，并且因此由客户类和任何子类的所有实例所继承。例如，如果我们把示例中的`Person`类修改为如下的样子，脚本的输出是相同的：
+
+```python
+class Super:
+    def __init__(self, name):
+        self._name = name
+        name = Name()
+class Person(Super): # Descriptors are inherited (class attrs)
+    pass
+```
+
+还要注意到，当一个描述符类在客户类之外无用的话，将描述符的定义嵌入客户类之中，这在语法上是完全合理的。这里，我们的示例看上去就像使用一个嵌套的类：
+
+```python
+class Person:
+    def __init__(self, name):
+        self._name = name
+
+    class Name:                  # Using a nested class
+        "name descriptor docs"
+        def __get__(self, instance, owner):
+            print('fetch...')
+            return instance._name
+        def __set__(self, instance, value):
+            print('change...')
+            instance._name = value
+        def __delete__(self, instance):
+            print('remove...')
+            del instance._name
+    name = Name()
+```
+
+当按照这种方式编码时，`Name`变成了`Person`类声明的作用域中的一个局部变量，这样，它不会与类之外的任何名称冲突。但是，测试代码的最后一行必须改为从其新位置获取文档字符串：
+
+```python
+print(Person.Name.__doc__)     # Differs: not Name.__doc__ outside class
+```
+
+
+
+#### 计算的属性
+
+描述符也可以用来在每次获取属性的时候计算它们的值。如下例子说明了这点：这里使用了一个描述符，从而在每次获取属性值的时候对其值自动求平方：
+
+```python
+# desc-computed.py
+
+class DescSquare:
+    def __init__(self, start):             # Each desc has own state
+        self.value = start
+    def __get__(self, instance, owner):    # On attr fetch
+        return self.value ** 2
+    def __set__(self, instance, value):    # On attr assign
+        self.value = value                 # No delete or docs
+  
+class Client1:
+    X = DescSquare(3)          # Assign descriptor instance to class attr
+
+class Client2:
+    X = DescSquare(32)         # Another instance in another client class
+                               # Could also code two instances in same class
+
+c1 = Client1()
+c2 = Client2()
+
+print(c1.X)      # 3 ** 2
+c1.X = 4
+print(c1.X)      # 4 ** 2
+print(c2.X)      # 32 ** 2 (1024)
+```
+
+
+
+#### 在描述符中使用状态信息
+
+
+
+
+
+#### 特性和描述符是如何相关的
+
+
 
 
 
