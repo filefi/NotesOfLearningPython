@@ -1266,13 +1266,209 @@ print(c2.X)      # 32 ** 2 (1024)
 
 #### 在描述符中使用状态信息
 
+实际上，描述符可以使用实例状态和描述符状态，或者二者的任何组合：
+
+- 描述符状态用来管理内部用于描述符工作的数据。
+- 实例状态记录了和客户类相关的信息，以及可能由客户类创建的信息。
+
+例如，如下的描述符把信息附加到自己的实例，因此，它不会与客户类的实例上的信息冲突：
+
+```python
+# desc-state-desc.py
+
+class DescState:                           # Use descriptor state, (object) in 2.X
+    def __init__(self, value):
+        self.value = value
+    def __get__(self, instance, owner):    # On attr fetch
+        print('DescState get')
+        return self.value * 10
+    def __set__(self, instance, value):    # On attr assign
+        print('DescState set')
+        self.value = value
+
+# Client class
+class CalcAttrs:
+    X = DescState(2)                       # Descriptor class attr
+    Y = 3                                  # Class attr
+    def __init__(self):
+        self.Z = 4                         # Instance attr
+
+obj = CalcAttrs()
+print(obj.X, obj.Y, obj.Z)                 # X is computed, others are not
+obj.X = 5                                  # X assignment is intercepted
+CalcAttrs.Y = 6                            # Y reassigned in class
+obj.Z = 7                                  # Z assigned in instance
+print(obj.X, obj.Y, obj.Z)
+
+obj2 = CalcAttrs()                         # But X uses shared data, like Y!
+print(obj2.X, obj2.Y, obj2.Z)
+```
+
+当这段代码运行的时候，`X`在获取时被计算，但它的值对所有客户实例都是相同的，因为它使用的是描述符级别（descriptor-level）的状态：
+```
+c:\code> py −3 desc-state-desc.py
+DescState get
+20 3 4
+DescState set
+DescState get
+50 6 7
+DescState get
+50 6 4
+```
+
+对描述符存储或使用附加到客户类的实例的一个属性，而不是自己的属性，这也是可行的。**至关重要的一点是，与存储在描述符自身中的数据不同，这允许每个客户类实例都有不同的数据。**
+
+如下例子中的描述符假设实例有一个数据`_X`通过客户类附加，并且使用它来计算她所表示的属性的值：
+
+```python
+# desc-state-inst.py
+
+class InstState: # Using instance state, (object) in 2.X
+    def __get__(self, instance, owner):
+        print('InstState get')             # Assume set by client class
+        return instance._X * 10
+    def __set__(self, instance, value):
+        print('InstState set')
+        instance._X = value
+
+# Client class
+class CalcAttrs:
+    X = InstState()                        # Descriptor class attr
+    Y = 3                                  # Class attr
+    def __init__(self):
+    self._X = 2                            # Instance attr
+    self.Z = 4                             # Instance attr
+
+obj = CalcAttrs()
+print(obj.X, obj.Y, obj.Z)                 # X is computed, others are not
+obj.X = 5                                  # X assignment is intercepted
+CalcAttrs.Y = 6                            # Y reassigned in class
+obj.Z = 7                                  # Z assigned in instance
+print(obj.X, obj.Y, obj.Z)
+
+obj2 = CalcAttrs()                         # But X differs now, like Z!
+print(obj2.X, obj2.Y, obj2.Z)
+```
+
+和之前一样，`X`被分配给管理访问的描述符。此描述符本身没有任何信息，但它使用一个假定存在于实例中的属性`_X`，以此避免与描述符本身的变量名`X`冲突。当这个版本的代码运行时，结果与之前相似；但由于不同的状态策略，描述符属性的值可以因不同客户实例而不同：
+
+```
+c:\code> py −3 desc-state-inst.py
+InstState get
+20 3 4
+InstState set
+InstState get
+50 6 7
+InstState get
+20 6 4
+```
+
+**描述符和实例状态都有各自的用途。实际上，这是 *描述符* 优于 *特性* 的一个通用优点——因为它们都有自己的状态，所以可以很容易地在内部保存数据，而不用将数据添加到客户实例对象的命名空间中。**
+
+作为总结，下面同时使用这两种状态信息存储方式：`self.data`保存每个属性的信息，而`instance.data`保存每个客户实例各自的信息：
+
+```python
+>>> class DescBoth:
+        def __init__(self, data):
+            self.data = data
+        def __get__(self, instance, owner):
+            return '%s, %s' % (self.data, instance.data)
+        def __set__(self, instance, value):
+            instance.data = value
+>>> class Client:
+        def __init__(self, data):
+            self.data = data
+        managed = DescBoth('spam')
+>>> I = Client('eggs')
+>>> I.managed # Show both data sources
+'spam, eggs'
+>>> I.managed = 'SPAM' # Change instance data
+>>> I.managed
+'spam, SPAM'
+```
+
+我们可以使用`dir`和`getattr`访问像特性和描述符的“虚拟”属性，即使它们不存在于实例的命名空间字典中。
+
+```python
+>>> I.__dict__
+{'data': 'SPAM'}
+>>> [x for x in dir(I) if not x.startswith('__')]
+['data', 'managed']
+
+>>> getattr(I, 'data')
+'SPAM'
+>>> getattr(I, 'managed')
+'spam, SPAM'
+
+>>> for attr in (x for x in dir(I) if not x.startswith('__')):
+        print('%s => %s' % (attr, getattr(I, attr)))
+
+data => SPAM
+managed => spam, SPAM
+The more generic __getattr__
+```
 
 
 
 
 #### 特性和描述符是如何相关的
 
+特性和描述符有很强的相关性——`property`内置函数只是创建描述符的一种方便方式。我们可以使用如下的一个描述符类来模拟`property`内置函数：
 
+```python
+# prop-desc-equiv.py
+
+class Property:
+    def __init__(self, fget=None, fset=None, fdel=None, doc=None):
+        self.fget = fget
+        self.fset = fset
+        self.fdel = fdel                                  # Save unbound methods
+        self.__doc__ = doc                                # or other callables
+
+    def __get__(self, instance, instancetype=None):
+        if instance is None:
+            return self
+        if self.fget is None:
+            raise AttributeError("can't get attribute")
+        return self.fget(instance)                        # Pass instance to self
+                                                          # in property accessors
+    def __set__(self, instance, value):
+        if self.fset is None:
+            raise AttributeError("can't set attribute")
+        self.fset(instance, value)
+
+    def __delete__(self, instance):
+        if self.fdel is None:
+            raise AttributeError("can't delete attribute")
+        self.fdel(instance)
+
+class Person:
+    def getName(self): print('getName...')
+    def setName(self, value): print('setName...')
+    name = Property(getName, setName)                     # Use like property()
+
+x = Person()
+x.name
+x.name = 'Bob'
+del x.name
+```
+
+这个`Property`类捕获了带有描述符协议的属性访问，并且把请求定位到创建类的时候在描述符状态中传入和保存的函数或方法。
+
+```
+c:\code> py −3 prop-desc-equiv.py
+getName...
+setName...
+AttributeError: can't delete attribute
+```
+
+
+
+##### Descriptors and slots and more
+
+注意，描述符用来实现Python的`__slots__`。通过创建类级别的（class-level）描述符来截取对`slot`名称的访问，并将这些名称映射到实例中连续的存储空间，从而避免了实例的属性字典。然而，与显式的`property`调用不同，当一个`__slots__`属性出现在类中，slots背后的许多神奇之处都是在类创建时自动和隐式地编排的。
+
+>  **注意： 在第39章中，我们还将使用描述符来实现应用于函数和方法的函数装饰器。正如你将在那里见到的，由于描述符接收描述符和主体类实例，它们在这种情况下工作得很好，尽管嵌套函数通常是一种更简单的解决方案。我们还将部署描述符作为拦截内置操作方法的一种方式。**
 
 
 
