@@ -1,4 +1,4 @@
-# 第8部分 高级话题
+第8部分 高级话题
 
 ## 第37章 Unicode和字节字符串
 
@@ -1466,13 +1466,131 @@ AttributeError: can't delete attribute
 
 ##### Descriptors and slots and more
 
-注意，描述符用来实现Python的`__slots__`。通过创建类级别的（class-level）描述符来截取对`slot`名称的访问，并将这些名称映射到实例中连续的存储空间，从而避免了实例的属性字典。然而，与显式的`property`调用不同，当一个`__slots__`属性出现在类中，slots背后的许多神奇之处都是在类创建时自动和隐式地编排的。
+注意，Python的`__slots__`是由描述符实现的。通过创建类级别的（class-level）描述符来截取对`slot`名称的访问，并将这些名称映射到实例中连续的存储空间，从而避免了实例的属性字典。然而，与显式的`property`调用不同，当一个`__slots__`属性出现在类中，slots背后的许多神奇之处都是在类创建时自动和隐式地编排的。
 
 >  **注意： 在第39章中，我们还将使用描述符来实现应用于函数和方法的函数装饰器。正如你将在那里见到的，由于描述符接收描述符和主体类实例，它们在这种情况下工作得很好，尽管嵌套函数通常是一种更简单的解决方案。我们还将部署描述符作为拦截内置操作方法的一种方式。**
 
 
 
 ### 38.4 `__getattr__`和`__getattribute__`
+
+`__getattr__`和`__getattribute__`操作符重载方法提供了另一种方法来拦截类实例的属性获取。就像特性和描述符一样，它们也允许我们插入一些特殊的代码。当访问属性的时候，这些代码会自动运行。
+
+属性获取拦截表现为两种形式，可用两个不同的方法来编写：
+
+- `__getattr__`针对未定义的属性运行——也就是，属性没有存储在实例上，或者没有从其类之一继承的时候。
+- `__getattribute__`针对每个属性运行，因此，当使用它的时候，必须小心避免通过把属性访问传递给超类而导致递归循环。
+
+`__getattr__`和`__getattribute__`方法也比特性和描述符更加通用——它们可以用来拦截对任何（几乎所有的）实例属性的获取，而不仅仅只是分配给它们的那些特定名称。因此，这两个方法很适合于通用的基于委托的编码模式——它们可以用来实现包装（也称为，代理，*proxy*）对象，该对象管理对一个嵌套对象的所有属性访问。**相反，如果使用特性和描述符，我们则必须为想要拦截的每个属性都定义一个特性或描述符。**
+
+`__getattr__`和`__getattribute__`方法只拦截属性获取，而不拦截属性赋值。要捕获赋值对属性的更改，我们必须编写一个`__setattr__`方法——这是一个操作符重载方法，只对每个属性获取运行，必须小心避免由于通过实例命名空间字典指向属性赋值而导致的递归循环。
+
+`__delattr__`重载方法来拦截属性删除。该方法也要求必须以同样的方式避免循环。**相反，特性和描述符通过设计(design)来捕获访问（get）、设置（set）和删除（delete）操作。**
+
+
+
+#### 基础知识
+
+简而言之，如果一个类定义了或继承了如下方法，那么当一个实例用于后面的注释所提到的情况时，它们将自动运行：
+
+```python
+def __getattr__(self, name): # On undefined attribute fetch [obj.name]
+def __getattribute__(self, name): # On all attribute fetch [obj.name]
+def __setattr__(self, name, value): # On all attribute assignment [obj.name=value]
+def __delattr__(self, name): # On all attribute deletion [del obj.name]
+```
+
+所有这些之中，`self`通常是主体实例对象，`name`是将要访问的属性的字符串名，`value`是要赋给该属性的对象。两个get方法通常返回一个属性的值，另两个方法不返回（即，返回`None`）。
+
+例如，要捕获每个属性获取，我们可以使用`__getattr__`和`__getattrbute__`方法；要捕获属性赋值，可以使用`__setattr__`：
+
+```python
+class Catcher:
+    def __getattr__(self, name):
+        print('Get: %s' % name)
+    def __setattr__(self, name, value):
+        print('Set: %s %s' % (name, value))
+
+X = Catcher()
+X.job                # Prints "Get: job"
+X.pay                # Prints "Get: pay"
+X.pay = 99           # Prints "Set: pay 99"
+```
+
+在这个例子中，使用`__getattribute__`也同样奏效，但要求必须是新式类，并且存在发生循环的可能性：
+
+```python
+class Catcher(object):                # Need (object) in 2.X only
+    def __getattribute__(self, name): # Works same as getattr here
+        print('Get: %s' % name)       # But prone to loops on general
+    ...rest unchanged...
+```
+
+这样的代码结构可以用来实现我们在第31章介绍的委托设计模式。由于所有的属性通常
+都指向我们的拦截方法，所以我们可以验证它们并将其传递到嵌入的、管理的对象中。特性和描述符没有这样的类似功能，做不到对每个可能的包装对象中每个可能的属性编
+写访问器。
+
+##### 避免属性拦截方法中的循环
+
+这些方法通常都容易使用，它们唯一复杂的方面就是潜在的循环（也称为，递归）。由于`__getattribute__`和`__setattr__`针对所有的属性运行，因此，它们的代码要注意在访问其他属性的时候避免再次调用自己并触发一次递归循环。
+
+例如，在一个`__getattribute__`方法代码内部的另一次属性获取，将会再次触发`__getattribute__`，并且代码将会循环直到内存耗尽：
+
+```python
+def __getattribute__(self, name):
+    x = self.other # LOOPS!
+```
+
+技术上来说，这个方法比这个例子中所展示的更容易出现循环。一个`self`属性引用在定义了这个方法的类中的任何地方运行，都将触发`__getattribute__`，并且，根据类的逻辑，同样也存在潜在的循环。因为拦截每个属性的获取是这个方法的目的，所以这通常是期望的行为。但是你应该知道这个方法会捕获所有的属性获取，而不论它们的代码被编写在哪里。当代码被编写在`__getattribute__`中，这几乎总是会导致循环。
+
+要避免这个问题，把获取指向一个更高的超类，而不是跳过这个层级的版本——`object`类总是一个新式类的超类，并且它在这里可以很好地起作用：
+
+```python
+def __getattribute__(self, name):
+    x = object.__getattribute__(self, 'other') # Force higher to avoid me
+```
+
+对于`__setattr__`，情况是类似的。在这个方法内赋值任何属性，都会再次触发`__setattr__`并创建一个类似的循环：
+
+```python
+def __setattr__(self, name, value):
+    self.other = value             # Recurs (and might LOOP!)
+```
+
+这里也是一样的，尽管`self`属性赋值出现在`__setattr__`中更容易导致循环，但如果在定义了`__setattr__`方法的类中的任何地方有`self`属性赋值，那么这些`self`属性赋值也会触发`__setattr__`。
+
+要避免这个问题，把属性作为实例的`__dict__`命名空间字典中的一个键来赋值。这样就避免了直接的属性赋值：
+
+```python
+def __setattr__(self, name, value):
+    self.__dict__['other'] = value     # Use attr dict to avoid me
+```
+
+尽管这不是传统的做法，但`__setattr__`方法也可以将自己的属性赋值传递给一个更高层级的超类，来避免循环，就像`__getattribute__`一样。**注意，这个方案有时候是更优的选择。**
+
+```python
+def __setattr__(self, name, value):
+    object.__setattr__(self, 'other', value) # Force higher to avoid me
+```
+
+然而，相比之下，我们不能`__getattribute__`中使用`__dict__`技巧来避免循环：
+
+```python
+def __getattribute__(self, name):
+    x = self.__dict__['other'] # Loops!
+```
+
+**获取`__dict__`属性本身会再次触发`__getattribute__`，导致一个递归循环。**
+
+`__delattr__`方法针对每次属性删除而调用（就像针对每次属性赋值调用`__setattr__`一样）。因此，我们必须小心，在删除属性的时候要避免循环，通过使用同样的技术：命名空间字典或者超类方法调用。
+
+> As noted in Chapter 30, attributes implemented with new-style class features such as slots and properties are not physically stored in the instance’s `__dict__` namespace dictionary (and slots may even preclude its existence entirely). Because of this, code that wishes to support suchattributes should code `__setattr__` to assign with the `object.__setattr__` scheme shown here, not by `self.__dict__` indexing. Namespace `__dict__` operations suffice for classes known to storedata in instances, like this chapter’s self-contained examples; general tools, though, should prefer object.
+
+
+
+#### 第一个实例
+
+
 
 
 
