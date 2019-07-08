@@ -1476,7 +1476,7 @@ AttributeError: can't delete attribute
 
 `__getattr__`和`__getattribute__`操作符重载方法提供了另一种方法来拦截类实例的属性获取。就像特性和描述符一样，它们也允许我们插入一些特殊的代码。当访问属性的时候，这些代码会自动运行。
 
-属性获取拦截表现为两种形式，可用两个不同的方法来编写：
+**属性获取拦截表现为两种形式，可用两个不同的方法来编写：**
 
 - `__getattr__`针对未定义的属性运行——也就是，属性没有存储在实例上，或者没有从其类之一继承的时候。
 - `__getattribute__`针对每个属性运行，因此，当使用它的时候，必须小心避免通过把属性访问传递给超类而导致递归循环。
@@ -1526,9 +1526,7 @@ class Catcher(object):                # Need (object) in 2.X only
     ...rest unchanged...
 ```
 
-这样的代码结构可以用来实现我们在第31章介绍的委托设计模式。由于所有的属性通常
-都指向我们的拦截方法，所以我们可以验证它们并将其传递到嵌入的、管理的对象中。特性和描述符没有这样的类似功能，做不到对每个可能的包装对象中每个可能的属性编
-写访问器。
+这样的代码结构可以用来实现我们在第31章介绍的委托设计模式。由于所有的属性通常都指向我们的拦截方法，所以我们可以验证它们并将其传递到嵌入的、管理的对象中。特性和描述符没有这样的类似功能，做不到对每个可能的包装对象中每个可能的属性编写访问器。
 
 ##### 避免属性拦截方法中的循环
 
@@ -1590,7 +1588,226 @@ def __getattribute__(self, name):
 
 #### 第一个实例
 
+这里是与用来说明特性和描述符的示例一样的示例，不过这次是用属性操作符重载方法实现的。由于这些方法如此通用，所以我们在这里测试属性名来获知何时将要访问一个管理的属性；其他的则允许正常传递：
 
+```python
+class Person:                               # Portable: 2.X or 3.X
+    def __init__(self, name):               # On [Person()]
+        self._name = name                   # Triggers __setattr__!
+
+    def __getattr__(self, attr):            # On [obj.undefined]
+        print('get: ' + attr)
+        if attr == 'name':                  # Intercept name: not stored
+            return self._name               # Does not loop: real attr
+        else:                               # Others are errors
+            raise AttributeError(attr)
+
+    def __setattr__(self, attr, value):     # On [obj.any = value]
+        print('set: ' + attr)
+        if attr == 'name':
+            attr = '_name'                  # Set internal name
+        self.__dict__[attr] = value         # Avoid looping here
+
+    def __delattr__(self, attr):            # On [del obj.any]
+        print('del: ' + attr)
+        if attr == 'name':
+            attr = '_name'                  # Avoid looping here too
+        del self.__dict__[attr]             # but much less common
+
+
+bob = Person('Bob Smith')                   # bob has a managed attribute
+print(bob.name)                             # Runs __getattr__
+bob.name = 'Robert Smith'                   # Runs __setattr__
+print(bob.name)
+del bob.name                                # Runs __delattr__
+
+print('-'*20)
+sue = Person('Sue Jones')                   # sue inherits property too
+print(sue.name)
+#print(Person.name.__doc__)                 # No equivalent here
+```
+
+注意，`__init__`构造函数中的属性赋值也触发了`__setattr__`，这个方法捕获了每次属性赋值，即便是类自身之中的那些。运行这段代码的时候，会产生同样的输出，但这一次，它是Python的常规操作符重载机制与我们的属性拦截方法的结果：
+
+```
+c:\code> py −3 getattr-person.py
+set: _name
+get: name
+Bob Smith
+set: name
+get: name
+Robert Smith
+del: name
+--------------------
+set: _name
+get: name
+Sue Jones
+```
+
+还要注意，与特性和描述符不同，这里没有为属性直接声明指定的文档，管理的属性存在于我们拦截方法的代码之中，而不是在不同的对象中。
+
+##### 使用`__getattribute__`
+
+用下面的代码替换示例中的`__getattr__`，以使用`__getattribute__`实现相同的结果。由于它会捕获所有的属性获取，这个版本必须通过把新的获取传递到超类来避免循环，并且通常不能假设未知的名称是错误：
+
+```python
+# getattribute-person.py
+
+class Person:                               # Portable: 2.X or 3.X
+    def __init__(self, name):               # On [Person()]
+        self._name = name                   # Triggers __setattr__!
+
+    # Replace __getattr__ with this
+    def __getattribute__(self, attr):               # On [obj.any]
+        print('get: ' + attr)
+        if attr == 'name':                          # Intercept all names
+            attr = '_name'                          # Map to internal name
+        return object.__getattribute__(self, attr)  # Avoid looping here
+
+    def __setattr__(self, attr, value):     # On [obj.any = value]
+        print('set: ' + attr)
+        if attr == 'name':
+            attr = '_name'                  # Set internal name
+        self.__dict__[attr] = value         # Avoid looping here
+
+    def __delattr__(self, attr):            # On [del obj.any]
+        print('del: ' + attr)
+        if attr == 'name':
+            attr = '_name'                  # Avoid looping here too
+        del self.__dict__[attr]             # but much less common
+
+bob = Person('Bob Smith')                   # bob has a managed attribute
+print(bob.name)                             # Runs __getattr__
+bob.name = 'Robert Smith'                   # Runs __setattr__
+print(bob.name)
+del bob.name                                # Runs __delattr__
+
+print('-'*20)
+sue = Person('Sue Jones')                   # sue inherits property too
+print(sue.name)
+```
+
+当运行这个版本时，输出是类似的。但是，由于`__init__`中的赋值触发了`__setattr__`，而`__setattr__`中获取`__dict__`属性又触发了`__getattribute__`，所以我们得到一个额外的`__getattribute__`调用：
+
+```
+c:\code> py −3 getattribute-person.py
+set: _name
+get: __dict__
+get: name
+Bob Smith
+set: name
+get: __dict__
+get: name
+Robert Smith
+del: name
+get: __dict__
+--------------------
+set: _name
+get: __dict__
+get: name
+Sue Jones
+```
+
+#### 计算的属性
+
+与介绍特性和描述符时的情况相同，下面的代码创建了一个虚拟的属性`X`，当获取的时候自动计算它：
+
+```python
+# getattr-computed.py
+
+class AttrSquare:
+    def __init__(self, start):
+        self.value = start               # Triggers __setattr__!
+
+    def __getattr__(self, attr):         # On undefined attr fetch
+        if attr == 'X':
+            return self.value ** 2       # value is not undefined
+        else:
+            raise AttributeError(attr)
+
+    def __setattr__(self, attr, value):  # On all attr assignments
+        if attr == 'X':
+            attr = 'value'
+        self.__dict__[attr] = value      # 使用__dict__来避免循环
+
+
+A = AttrSquare(3)      # 2 instances of class with overloading
+B = AttrSquare(32)     # Each has different state information
+
+print(A.X)             # 3 ** 2
+A.X = 4
+print(A.X)             # 4 ** 2
+print(B.X)             # 32 ** 2 (1024)
+```
+
+运行这段代码，会产生与前面我们使用特性和描述符的时候相同的输出，但是，这段脚本的机制是基于通用的属性拦截方法：
+
+```
+c:\code> py −3 getattr-computed.py
+9
+16
+1024
+```
+
+
+
+##### 使用`__getattribute__`
+
+如前所述，我们可以用`__getattribute__`而不是`__getattr__`实现同样的效果。
+
+```python
+class AttrSquare: # Add (object) for 2.X
+    def __init__(self, start):
+        self.value = start                        # Triggers __setattr__!
+    def __getattribute__(self, attr):             # On all attr fetches
+        if attr == 'X':
+            return self.value ** 2                # Triggers __getattribute__ again!
+        else:
+            return object.__getattribute__(self, attr)
+    def __setattr__(self, attr, value):           # On all attr assignments
+        if attr == 'X':
+            attr = 'value'
+        object.__setattr__(self, attr, value)     # 调用超类方法来避免循环
+```
+
+当这个版本运行的时候，结果再次相同。
+
+**注意，隐式的指向在类的方法内部进行：**
+
+- 构造函数中的 `self.value=start` 触发`__setattr__`。
+- `__getattribute__`中`self.value`再次触发`__getattribute__`。
+
+实际上，每次我们获取属性X的时候，`__getattribute__`都运行了两次。这并没有在`__getattr__`版本中发生，因为`value`属性没有定义。如果你关心速度并且要避免这一点，修改`__getattribute__`以使用超类来获取`value`：
+
+```python
+def __getattribute__(self, attr):
+    if attr == 'X':
+        return object.__getattribute__(self, 'value') ** 2
+```
+
+
+
+#### `__getattr__`和`__getattribute__`比较
+
+
+
+
+
+
+
+#### 管理技术比较
+
+
+
+
+
+
+
+#### 拦截内置操作属性
+
+
+
+##### 回顾基于委托的（delegation-based）管理器
 
 
 
