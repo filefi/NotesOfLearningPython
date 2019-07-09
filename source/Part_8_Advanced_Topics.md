@@ -2072,25 +2072,431 @@ getattribute: __str__
 <__main__.GetAttribute object at 0x02987CF8>
 ```
 
+**我们可以跟踪这些输出，从而了解到脚本中的打印，看看这是如何工作的：**
+
+- 在Python 3.X中，`__str__`访问有两次未能被`__getattr__`捕获：一次是针对内置打印，一次是针对显式获取，因为从该类继承了一个默认方法（实际上，该类来自内置`object`，它是每个类的一个超类）。
+- `__str__`只有一次未能被`__getattribute__`捕获，在内置打印操作中，显式获取绕过了继承的版本。
+- `__call__`在Python 3.X中用于内置调用表达式的两次都没有捕获，但是，当显式获取的时候，它两次都拦截到了；和`__str__`不同，没有继承的`__call__`默认版本能够超越`__getattr__`。
+- `__len__`被两个类都捕获了，直接原因是，它在类自身中是一个显式定义的方法——它的名称指明了，在Python 3.X中，如果我们删除了类的`__len__`方法，它不会指向`__getattr__`或`__getattribute__`。
+- 所有其他的内置操作在Python 3.X中都没有被两种方案拦截。
+
 
 
 ##### 回顾基于委托的（delegation-based）管理器
 
+第28章的面向对象教程展示了一个`Manager`类，它使用对象嵌套和方法委托来定制它的超类，而不是使用继承。这里再次引用那段代码，删除了一些不相关的测试：
 
+```python
+class Person:
+    def __init__(self, name, job=None, pay=0):
+        self.name = name
+        self.job = job
+        self.pay = pay
+    def lastName(self):
+        return self.name.split()[-1]
+    def giveRaise(self, percent):
+        self.pay = int(self.pay * (1 + percent))
+    def __repr__(self):
+        return '[Person: %s, %s]' % (self.name, self.pay)
+
+class Manager:
+    def __init__(self, name, pay):
+        self.person = Person(name, 'mgr', pay) # Embed a Person object
+    def giveRaise(self, percent, bonus=.10):
+        self.person.giveRaise(percent + bonus) # Intercept and delegate
+    def __getattr__(self, attr):
+        return getattr(self.person, attr)      # Delegate all other attrs
+    def __repr__(self):
+        return str(self.person)                # Must overload again (in 3.X)
+    
+if __name__ == '__main__':
+    sue = Person('Sue Jones', job='dev', pay=100000)
+    print(sue.lastName())
+    sue.giveRaise(.10)
+    print(sue)
+    tom = Manager('Tom Jones', 50000)   # Manager.__init__
+    print(tom.lastName())               # Manager.__getattr__ -> Person.lastName
+    tom.giveRaise(.10)                  # Manager.giveRaise -> Person.giveRaise
+    print(tom)                          # Manager.__repr__ -> Person.__repr__
+```
+
+像`Manager`这样的基于委托的类，在Python 3.X中必须重定义某些操作符重载方法（例如`__str__`）才能将它们指向嵌套的对象。也就是说，当操作符重载方法是一个对象的接口的一部分时，包装类必须通过在本地重新定义它们来容纳它们。
 
 
 
 ### 38.5 实例：属性验证
 
+来看一个更实际的示例，以所有的4种属性管理方案来编写代码。我们将要使用的这个示例定义了一个`CardHolder`对象，它带有4个属性，其中3个属性是要管理的。管理的属性在获取或存储的时候要验证或转换值。对于同样的测试代码，所有4个版本都产生同样的结果，但是，它们以不同的方式实现了它们的属性。
+
+#### 使用特性来验证
+
+```python
+# File validate_properties.py
+
+class CardHolder(object): # Need "(object)" for setter in 2.X
+    acctlen = 8 # Class data
+    retireage = 59.5
+    def __init__(self, acct, name, age, addr): # 注意，__init__构造函数方法内部的属性赋值也触发了特性的setter方法。
+        self.acct = acct   # Instance data
+        self.name = name   # These trigger prop setters too!
+        self.age = age     # __X mangled to have class name
+        self.addr = addr   # addr is not managed
+        
+    # remain has no data
+    def getName(self):
+        return self.__name
+    def setName(self, value):
+        value = value.lower().replace(' ', '_')
+        self.__name = value
+    name = property(getName, setName)
+    
+    def getAge(self):
+        return self.__age
+    def setAge(self, value):
+        if value < 0 or value > 150:
+            raise ValueError('invalid age')
+        else:
+            self.__age = value
+    age = property(getAge, setAge)
+
+    def getAcct(self):
+        return self.__acct[:-3] + '***'
+    def setAcct(self, value):
+        value = value.replace('-', '')
+        if len(value) != self.acctlen:
+            raise TypeError('invald acct number')
+        else:
+            self.__acct = value
+    acct = property(getAcct, setAcct)
+
+    def remainGet(self): # Could be a method, not attr
+        return self.retireage - self.age # Unless already using as attr
+    remain = property(remainGet)
+```
+
+
+
+##### 测试代码
+
+我们将对这个例子的所有4个版本使用这段同样的测试代码。当它运行的时候，我们创建了管理的属性类的两个实例，并且获取和修改其各种属性。期待失效的操作包装在`try`语句中：
+
+```python
+# File validate_tester.py
+
+from __future__ import print_function # 2.X
+
+def loadclass():
+    import sys, importlib
+    modulename = sys.argv[1] # Module name in command line
+    module = importlib.import_module(modulename) # Import module by name string
+    print('[Using: %s]' % module.CardHolder) # No need for getattr() here
+    return module.CardHolder
+
+def printholder(who):
+    print(who.acct, who.name, who.age, who.remain, who.addr, sep=' / ')
+    
+    
+if __name__ == '__main__':
+    CardHolder = loadclass()
+    bob = CardHolder('1234-5678', 'Bob Smith', 40, '123 main st')
+    printholder(bob)
+    bob.name = 'Bob Q. Smith'
+    bob.age = 50
+    bob.acct = '23-45-67-89'
+    printholder(bob)
+
+    sue = CardHolder('5678-12-34', 'Sue Jones', 35, '124 main st')
+    printholder(sue)
+    try:
+        sue.age = 200
+    except:
+        print('Bad age for Sue')
+
+    try:
+        sue.remain = 5
+    except:
+        print("Can't set sue.remain")
+
+    try:
+        sue.acct = '1234567'
+    except:
+        print('Bad acct for Sue')
+```
+
+如下是我们的self测试代码的输出。并且，这对这个示例的所有版本都是一样的。
+
+```
+c:\code> py −3 validate_tester.py validate_properties
+[Using: <class 'validate_properties.CardHolder'>]
+12345*** / bob_smith / 40 / 19.5 / 123 main st
+23456*** / bob_q._smith / 50 / 9.5 / 123 main st
+56781*** / sue_jones / 35 / 24.5 / 124 main st
+Bad age for Sue
+Can't set sue.remain
+Bad acct for Sue
+```
+
+
+
+#### 使用描述符来验证
+
+##### Option 1: 使用共享的描述符实例状态进行验证（Validating with shared descriptor instance state）
+
+```python
+# File validate_descriptors1.py: using shared descriptor state
+
+class CardHolder(object): # Need all "(object)" in 2.X only
+    acctlen = 8 # Class data
+    retireage = 59.5
+    
+    def __init__(self, acct, name, age, addr):   # 注意：__init__构造函数方法内部的属性赋值会触发描述符的__set__操作符方法
+        self.acct = acct    # Instance data
+        self.name = name    # These trigger __set__ calls too!
+        self.age = age      # __X not needed: in descriptor
+        self.addr = addr    # addr is not managed
+
+    # remain has no data
+    class Name(object):
+        def __get__(self, instance, owner):    # Class names: CardHolder locals
+            return self.name
+        def __set__(self, instance, value):
+            value = value.lower().replace(' ', '_')
+            self.name = value     # 赋值给描述符的属性。实际的name值附加到了描述符对象，而不是客户类实例。
+    name = Name()   # 在CardHolder客户类中，名为name的属性总是一个描述符对象，而不是数据。
+
+    class Age(object):
+        def __get__(self, instance, owner):
+            return self.age # Use descriptor data
+        def __set__(self, instance, value):
+            if value < 0 or value > 150:
+                raise ValueError('invalid age')
+            else:
+                self.age = value
+    age = Age()
+    
+    class Acct(object):
+        def __get__(self, instance, owner):
+            return self.acct[:-3] + '***'
+        def __set__(self, instance, value):
+            value = value.replace('-', '')
+            if len(value) != instance.acctlen:          # Use instance class data
+                raise TypeError('invald acct number')
+            else:
+                self.acct = value
+    acct = Acct()
+    
+    class Remain(object):
+        def __get__(self, instance, owner):
+            return instance.retireage - instance.age    # Triggers Age.__get__
+        def __set__(self, instance, value):  # 实现__set__并引发异常，以实现只读描述符
+            raise TypeError('cannot set remain')        # Else set allowed here
+    remain = Remain()   # remain是只读属性，且完全虚拟的，并根据需要计算。
+```
+
+```
+C:\code> python validate_tester.py validate_descriptors1
+...same output as properties, except class name...
+```
+
+
+
+##### Option 2: 使用每客户类实例状态来进行验证（Validating with per-client-instance state）
+
+Unlike in the prior property-based variant, though, in this case the actual name value is attached to the descriptor object, not the client class instance. Although we could store this value in either instance or descriptor state, the latter avoids the need to mangle names with underscores to avoid collisions. In the `CardHolder` client class, the attribute called `name` is always a descriptor object, not data.
+
+Importantly, the downside of this scheme is that state stored inside a descriptor itself is class-level data that is effectively shared by all client class instances, and so cannot vary between them. That is, storing state in the descriptor instance instead of the owner (client) class instance means that the state will be the same in all owner class instances. Descriptor state can vary only per attribute appearance.
+
+To see this at work, in the preceding descriptor-based `CardHolder` example, try printing attributes of the bob instance after creating the second instance, `sue`. The values of sue’s managed attributes (`name`, `age`, and `acct`) overwrite those of the earlier object `bob`, because both share the same, single descriptor instance attached to their class:
+
+```python
+# File validate_tester2.py
+
+from __future__ import print_function # 2.X
+
+from validate_tester import loadclass
+CardHolder = loadclass()
+
+bob = CardHolder('1234-5678', 'Bob Smith', 40, '123 main st')
+print('bob:', bob.name, bob.acct, bob.age, bob.addr)
+
+sue = CardHolder('5678-12-34', 'Sue Jones', 35, '124 main st')
+print('sue:', sue.name, sue.acct, sue.age, sue.addr) # addr differs: client data
+print('bob:', bob.name, bob.acct, bob.age, bob.addr) # name,acct,age overwritten?
+```
+
+
+
+```
+c:\code> py −3 validate_tester2.py validate_descriptors1
+[Using: <class 'validate_descriptors1.CardHolder'>]
+bob: bob_smith 12345*** 40 123 main st
+sue: sue_jones 56781*** 35 124 main st
+bob: sue_jones 56781*** 35 123 main st
+```
+
+
+
+```python
+# File validate_descriptors2.py: using per-client-instance state
+
+class CardHolder(object): # Need all "(object)" in 2.X only
+    acctlen = 8 # Class data
+    retireage = 59.5
+    
+    def __init__(self, acct, name, age, addr):
+        self.acct = acct # Client instance data
+        self.name = name # These trigger __set__ calls too!
+        self.age = age # __X needed: in client instance
+        self.addr = addr # addr is not managed
+        
+    # remain managed but has no data
+    class Name(object):
+        def __get__(self, instance, owner): # Class names: CardHolder locals
+            return instance.__name
+        def __set__(self, instance, value):
+            value = value.lower().replace(' ', '_')
+            instance.__name = value
+    name = Name() # class.name vs mangled attr
+    
+    class Age(object):
+        def __get__(self, instance, owner):
+            return instance.__age # Use descriptor data
+        def __set__(self, instance, value):
+            if value < 0 or value > 150:
+                raise ValueError('invalid age')
+            else:
+                instance.__age = value
+    age = Age()  # class.age vs mangled attr
+    
+    class Acct(object):
+        def __get__(self, instance, owner):
+            return instance.__acct[:-3] + '***'
+        def __set__(self, instance, value):
+            value = value.replace('-', '')
+            if len(value) != instance.acctlen: # Use instance class data
+                raise TypeError('invald acct number')
+            else:
+                instance.__acct = value
+    acct = Acct() # class.acct vs mangled name
+    
+    class Remain(object):
+        def __get__(self, instance, owner):
+            return instance.retireage - instance.age  # Triggers Age.__get__
+        def __set__(self, instance, value):
+            raise TypeError('cannot set remain')      # Else set allowed here
+    remain = Remain()
+```
+
+
+
+```
+c:\code> py −3 validate_tester2.py validate_descriptors2
+[Using: <class 'validate_descriptors2.CardHolder'>]
+bob: bob_smith 12345*** 40 123 main st
+sue: sue_jones 56781*** 35 124 main st
+bob: bob_smith 12345*** 40 123 main st
+
+c:\code> py −3 validate_tester.py validate_descriptors2
+...same output as properties, except class name...
+```
 
 
 
 
 
+#### 使用`__getattr__`验证
+
+这个替代方法代码量最少。当然，清晰与否比代码大小更重要，但额外的代码有时候意味着额外的开发和维护工作。可能这里更重要的是角色：像`__getattr__`这样的通用工具可能更适合于通用委托，而特性和描述符更直接是为了管理特定属性而设计。
+
+```python
+# File validate_getattr.py
+class CardHolder:
+    acctlen = 8 # Class data
+    retireage = 59.5
+    
+    def __init__(self, acct, name, age, addr):  # 注意:__init__构造函数方法中的属性赋值会触发类的__setattr__方法
+        self.acct = acct   # Instance data
+        self.name = name   # These trigger __setattr__ too
+        self.age = age     # _acct not mangled: name tested
+        self.addr = addr   # addr is not managed
+    
+    # remain has no data
+    def __getattr__(self, name):
+        if name == 'acct':                            # On undefined attr fetches
+            return self._acct[:-3] + '***'            # name, age, addr are defined
+        elif name == 'remain':
+            return self.retireage - self.age          # Doesn't trigger __getattr__
+        else:
+            raise AttributeError(name)
+    
+    def __setattr__(self, name, value):
+        if name == 'name':                            # On all attr assignments
+            value = value.lower().replace(' ', '_')   # addr stored directly
+        elif name == 'age':                           # acct mangled to _acct
+            if value < 0 or value > 150:
+                raise ValueError('invalid age')
+        elif name == 'acct':
+            name = '_acct'
+            value = value.replace('-', '')
+            if len(value) != self.acctlen:
+                raise TypeError('invald acct number')
+        elif name == 'remain':
+            raise TypeError('cannot set remain')   # 将remain实现为只读属性
+        self.__dict__[name] = value                   # Avoid looping (or via object)
+```
+
+When this code is run with either test script, it produces the same output (with a different class name):
+
+```
+c:\code> py −3 validate_tester.py validate_getattr
+...same output as properties, except class name...
+
+c:\code> py −3 validate_tester2.py validate_getattr
+...same output as instance-state descriptors, except class name...
+```
 
 
 
 
+
+#### 使用`__getattribute__`验证
+
+```python
+# File validate_getattribute.py
+class CardHolder(object): # Need "(object)" in 2.X only
+    acctlen = 8 # Class data
+    retireage = 59.5
+    
+    def __init__(self, acct, name, age, addr):
+        self.acct = acct # Instance data
+        self.name = name # These trigger __setattr__ too
+        self.age = age   # acct not mangled: name tested
+        self.addr = addr # addr is not managed
+        
+    # remain has no data
+    def __getattribute__(self, name):
+        superget = object.__getattribute__ # Don't loop: one level up
+        if name == 'acct': # On all attr fetches
+            return superget(self, 'acct')[:-3] + '***'
+        elif name == 'remain':
+            return superget(self, 'retireage') - superget(self, 'age')
+        else:
+            return superget(self, name) # name, age, addr: stored
+
+    def __setattr__(self, name, value):
+        if name == 'name': # On all attr assignments
+            value = value.lower().replace(' ', '_') # addr stored directly
+        elif name == 'age':
+            if value < 0 or value > 150:
+                raise ValueError('invalid age')
+        elif name == 'acct':
+            value = value.replace('-', '')
+            if len(value) != self.acctlen:
+                raise TypeError('invald acct number')
+        elif name == 'remain':
+            raise TypeError('cannot set remain')
+        self.__dict__[name] = value  # Avoid loops, orig names
+```
 
 
 
