@@ -1,4 +1,4 @@
-第8部分 高级话题
+# 第8部分 高级话题
 
 ## 第37章 Unicode和字节字符串
 
@@ -1789,21 +1789,288 @@ def __getattribute__(self, attr):
 
 #### `__getattr__`和`__getattribute__`比较
 
+为了概括`__getattr__`和`__getattribute__`之间的编码区别，下面的例子使用了这两者来实现3个属性——`attr1`是一个类属性；`attr2`是一个实例属性；`attr3`是一个虚拟的管理属性，当获取时计算它：
+
+```python
+class GetAttr:
+    attr1 = 1
+    def __init__(self):
+        self.attr2 = 2
+    def __getattr__(self, attr): # On undefined attrs only
+        print('get: ' + attr) # Not on attr1: inherited from class
+        if attr == 'attr3': # Not on attr2: stored on instance
+            return 3
+        else:
+            raise AttributeError(attr)
+            
+X = GetAttr()
+print(X.attr1)
+print(X.attr2)
+print(X.attr3)
+print('-'*20)
 
 
+class GetAttribute(object): # (object) needed in 2.X only
+    attr1 = 1
+    def __init__(self):
+        self.attr2 = 2
+    def __getattribute__(self, attr): # On all attr fetches
+        print('get: ' + attr) # Use superclass to avoid looping here
+        if attr == 'attr3':
+            return 3
+        else:
+            return object.__getattribute__(self, attr)
+        
+X = GetAttribute()
+print(X.attr1)
+print(X.attr2)
+print(X.attr3)
+```
 
+运行时，`__getattr__`版本拦截对`attr3`的访问，因为它是未定义的。另一方面，
+`__getattribute__`版本拦截所有的属性获取，并且必须将那些没有管理的属性访问指向超类获取器以避免循环：
+
+```
+c:\code> py −3 getattr-v-getattr.py
+1
+2
+get: attr3
+3
+--------------------
+get: attr1
+1
+get: attr2
+2
+get: attr3
+3
+```
+
+尽管`__getattribute__`拦截所有的属性获取，`__getattr__`拦截未定义属性的访问，但是实际上它们只是一个主题的不同变体。如果属性没有物理地存储，`__getattribute__`和`__getattr__`具有相同的效果。
 
 
 
 #### 管理技术比较
 
+为了概括我们在本章介绍的4种属性管理方法之间的编码区别，让我们快速地来看看使
+用每种技术的一个更全面的计算属性的示例。
+
+如下的版本使用特性来拦截并计算名为`square`和`cube`的属性。注意它们的基本值是如何存储到以下划线开头的名称中的，因此，它们不会与特性本身的名称冲突：
+
+```python
+# Two dynamically computed attributes with properties
+class Powers(object):                  # Need (object) in 2.X only
+    def __init__(self, square, cube):
+        self._square = square          # _square is the base value
+        self._cube = cube              # square is the property name
+
+    def getSquare(self):
+        return self._square ** 2
+    def setSquare(self, value):
+        self._square = value
+    square = property(getSquare, setSquare)
+
+    def getCube(self):
+        return self._cube ** 3
+    cube = property(getCube)
 
 
+X = Powers(3, 4)
+print(X.square)     # 3 ** 2 = 9
+print(X.cube)       # 4 ** 3 = 64
+X.square = 5
+print(X.square)     # 5 ** 2 = 25
+```
 
+要用描述符做到同样的事情，我们需要用完整的类定义属性。注意，描述符把基础值存储为实例状态，因此，它们必须再次使用下划线开头，以便不会与描述符的名称冲突：
+
+```python
+# Same, but with descriptors (per-instance state)
+class DescSquare(object):
+    def __get__(self, instance, owner):
+        return instance._square ** 2
+    def __set__(self, instance, value):
+        instance._square = value
+
+class DescCube(object):
+    def __get__(self, instance, owner):
+        return instance._cube ** 3
+
+class Powers(object):              # Need all (object) in 2.X only
+    square = DescSquare()
+    cube = DescCube()
+    def __init__(self, square, cube):
+        self._square = square           # "self.square = square" works too,
+        self._cube = cube               # because it triggers desc __set__!
+
+X = Powers(3, 4)
+print(X.square)      # 3 ** 2 = 9
+print(X.cube)        # 4 ** 3 = 64
+X.square = 5
+print(X.square)      # 5 ** 2 = 25
+```
+
+要使用`__getattr__`访问拦截来实现同样的结果，我们再次用下划线开头的名称存储基础值，这样对被管理的名称访问是未定义的，并且由此调用我们的方法。我们还需要编写一个`__setattrr__`来拦截赋值，并且注意避免其潜在的循环：
+
+```python
+# Same, but with generic __getattr__ undefined attribute interception
+class Powers:
+    def __init__(self, square, cube):
+        self._square = square
+        self._cube = cube
+        
+    def __getattr__(self, name):
+        if name == 'square':
+            return self._square ** 2
+        elif name == 'cube':
+            return self._cube ** 3
+        else:
+            raise TypeError('unknown attr:' + name)
+            
+    def __setattr__(self, name, value):
+        if name == 'square':
+            self.__dict__['_square'] = value     # Or use object
+        else:
+            self.__dict__[name] = value
+
+X = Powers(3, 4)
+print(X.square)     # 3 ** 2 = 9
+print(X.cube)       # 4 ** 3 = 64
+X.square = 5
+print(X.square)     # 5 ** 2 = 25
+```
+
+最后一个选项，使用`__getattribute__`来编写，类似于前一个版本。由于我们现在捕获了每一个属性，因此必须把基础值获取指向超类以避免循环：
+
+```python
+# Same, but with generic __getattribute__ all attribute interception
+class Powers(object): # Need (object) in 2.X only
+    def __init__(self, square, cube):
+        self._square = square
+        self._cube = cube
+
+    def __getattribute__(self, name):
+        if name == 'square':
+            return object.__getattribute__(self, '_square') ** 2
+        elif name == 'cube':
+            return object.__getattribute__(self, '_cube') ** 3
+        else:
+            return object.__getattribute__(self, name)
+
+    def __setattr__(self, name, value):
+        if name == 'square':
+            object.__setattr__(self, '_square', value) # Or use __dict__
+        else:
+            object.__setattr__(self, name , value)
+
+X = Powers(3, 4)
+print(X.square)     # 3 ** 2 = 9
+print(X.cube)       # 4 ** 3 = 64
+X.square = 5
+print(X.square)     # 5 ** 2 = 25
+```
+
+正如你所见到的，每种技术的编码形式都有所不同，但是，所有4种方法在运行的时候
+都产生同样的结果：
+
+```python
+9
+64
+25
+```
 
 
 
 #### 拦截内置操作属性
+
+注意，`__getattr__`和`__getattribute__`方法分别拦截未定义的属性获取和所有的属性获取，这使得它们很适合用于基于委托的编码模式。对于常规命名的属性来说，确实是这样的。但对于隐式地使用内置操作获取的方法名属性，`__getattr__`和`__getattribute__`方法可能根本不会运行。这意味着操作符重载方法调用不能委托给被包装的对象，除非包装类自己重新定义这些方法。
+
+例如，针对`__str__`、`__add__`和`__getitem__`方法的属性获取分别通过打印、`+`表达式和索引隐式地运行，而不会指向Python 3.X中的类属性拦截方法。换句话说，在Python 3.X的类中（以及Python 2.X的新式类中），没有直接的方法来通用地拦截像打印和加法这样的内置操作。
+
+如下的例子包含了`__getattr__`和`__getattribute__`方法的类，我们在其实例上测试各种属性类型和内置操作：
+
+```python
+# file getattr-bultins.py
+
+class GetAttr:
+    eggs = 88                       # eggs stored on class, spam on instance
+    def __init__(self):
+        self.spam = 77
+    def __len__(self):              # len here, else __getattr__ called with __len__
+        print('__len__: 42')
+        return 42
+    def __getattr__(self, attr):    # Provide __str__ if asked, else dummy func
+        print('getattr: ' + attr)
+        if attr == '__str__':
+            return lambda *args: '[Getattr str]'
+        else:
+            return lambda *args: None
+
+
+class GetAttribute(object):   # object required in 2.X, implied in 3.X
+    eggs = 88                 # In 2.X all are isinstance(object) auto
+    def __init__(self):       # But must derive to get new-style tools,
+        self.spam = 77        # incl __getattribute__, some __X__ defaults
+    def __len__(self):
+        print('__len__: 42')
+        return 42
+    def __getattribute__(self, attr):
+        print('getattribute: ' + attr)
+        if attr == '__str__':
+            return lambda *args: '[GetAttribute str]'
+        else:
+            return lambda *args: None
+
+
+for Class in GetAttr, GetAttribute:
+    print('\n' + Class.__name__.ljust(50, '='))
+    
+    X = Class()
+    X.eggs                     # Class attr
+    X.spam                     # Instance attr
+    X.other                    # Missing attr
+    len(X)                     # __len__ defined explicitly
+    
+    # New-styles must support [], +, call directly: redefine
+    try: X[0]                  # __getitem__?
+    except: print('fail []')
+        
+    try: X + 99                # __add__?
+    except: print('fail +')
+        
+    try: X()                   # __call__? (implicit via built-in)
+    except: print('fail ()')
+        
+    X.__call__()               # __call__? (explicit, not inherited)
+    print(X.__str__())         # __str__? (explicit, inherited from type)
+    print(X)                   # __str__? (implicit via built-in)
+```
+
+
+
+```
+c:\code> py −3 getattr-builtins.py
+GetAttr===========================================
+getattr: other
+__len__: 42
+fail []
+fail +
+fail ()
+getattr: __call__
+<__main__.GetAttr object at 0x02987CC0>
+<__main__.GetAttr object at 0x02987CC0>
+GetAttribute======================================
+getattribute: eggs
+getattribute: spam
+getattribute: other
+__len__: 42
+fail []
+fail +
+fail ()
+getattribute: __call__
+getattribute: __str__
+[GetAttribute str]
+<__main__.GetAttribute object at 0x02987CF8>
+```
 
 
 
