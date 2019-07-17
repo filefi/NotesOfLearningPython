@@ -2618,9 +2618,331 @@ def decorator(F):
 def func(): ... # func = decorator(func)
 ```
 
+这个装饰器在装饰的时候调用，并且当随后调用最初的函数名的时候，它所返回的调用对象将被调用。 **装饰器自身接受被装饰的函数，返回的调用对象会接受随后传递给被装饰函数的名称的任何参数。** 
+
+更概括地说，有一种常用的编码模式可以包含这一思想——装饰器返回了一个包装器(wrapper)，包装器把最初的函数保持到一个封闭的作用域中：
+
+```python
+def decorator(F):         # On @ decoration
+    def wrapper(*args):   # On wrapped function call
+        # Use F and args
+        # F(*args) calls original function
+    return wrapper
+
+@decorator                # func = decorator(func)
+def func(x, y):           # func is passed to decorator's F
+    ...
+
+func(6, 7)                # 6, 7 are passed to wrapper's *args
+```
+
+为了对类做同样的事情，我们可以重载调用操作`__call__`方法，并且使用实例属性而不是封闭的作用域：
+
+```python
+class decorator:
+    def __init__(self, func):         # On @ decoration
+        self.func = func
+    def __call__(self, *args):        # On wrapped function call
+        # Use self.func and args
+        # self.func(*args) calls original function
+
+
+@decorator
+def func(x, y):                       # func = decorator(func)
+    ...                               # func is passed to __init__
+
+
+func(6, 7)                            # 6, 7 are passed to __call__'s *args
+```
+
+现在，随后再调用`func`的时候，它确实会调用装饰器所创建的实例的`__call__`运算符重载方法；然后，`__call__`方法可能运行最初的`func`，因为它在一个实例属性中仍然可用。当按照这种方式编写代码的时候，每个装饰的函数都会产生一个新的实例来保持状态。
+
+##### 支持方法装饰
+
+尽管前面的基于类的代码对于拦截简单函数调用有效，但当它应用于类方法函数的时候，并不是很有效：
+
+```python
+class decorator:
+    def __init__(self, func):         # func is method without instance
+        self.func = func
+    def __call__(self, *args):        # self is decorator instance
+        # self.func(*args) fails!     # C instance not in args!
+
+class C:
+    @decorator
+    def method(self, x, y):           # method = decorator(method)  这相当于实例化并赋值给实例
+        ...                           # Rebound to decorator instance
+```
+
+当按照这种方式编码的时候，装饰的方法重绑定到装饰器类的一个实例，而不是一个简单的函数。
+
+为了支持函数和方法，嵌套函数的替代方法工作得更好：
+
+```python
+def decorator(F):           # F is func or method without instance
+    def wrapper(*args):     # class instance in args[0] for method
+        # F(*args) runs func or method
+    return wrapper
+
+
+@decorator
+def func(x, y):             # func = decorator(func)
+    ...
+    
+func(6, 7)                  # Really calls wrapper(6, 7)
+
+
+class C:
+    @decorator
+    def method(self, x, y): # method = decorator(method)
+        ...                 # Rebound to simple function
+
+
+X = C()
+X.method(6, 7)              # Really calls wrapper(X, 6, 7)
+```
+
+注意，嵌套函数可能是支持函数和方法的装饰的最直接方式，但是不一定是唯一的方式。
+
+#### 类装饰器
+
+类装饰器与函数装饰器密切相关，实际上，它们使用相同的语法和非常相似的编码模式。然而，不是包装单个的函数或方法，类装饰器是管理类的一种方式，或者用管理或扩展类所创建的实例的额外逻辑，来包装实例构建调用。
+
+##### 用法
+
+从语法上讲，类装饰器就像前面的`class`语句一样（就像前面函数定义中出现的函数装饰器）。装饰器必须是返回一个可调用对象的一个单参数的可调用对象，类装饰器语法如下：
+
+```python
+@decorator    # Decorate class
+class C:
+    ...
+
+x = C(99)     # Make an instance
+```
+
+等同于下面的语法——类自动地被传递给装饰器函数，并且装饰器的结果返回来分配给类名：
+
+```python
+class C:
+    ...
+
+C = decorator(C)  # Rebind class name to decorator result
+x = C(99)         # Essentially calls decorator(C)(99)
+```
+
+直接的效果就是，随后调用类名会创建一个实例，该实例会触发装饰器所返回的可调用对象，而不是调用最初的类自身。
+
+#### 实现
+
+新的类装饰器使用函数装饰器所使用的众多相同的技术来编写，尽管有些技术可能涉及两个级别的扩展，以此来管理实例构造调用和实例接口访问。由于类装饰器也是返回一个可调用对象的一个可调用对象，因此大多数函数和类的组合已经足够了。
+
+尽管先编码，但装饰器的结果是当随后创建一个实例的时候才运行的。例如，要在一个类创建之后直接管理它，返回最初的类自身：
+
+```python
+def decorator(C):
+    # Process class C
+    return C
+
+@decorator
+class C: ...             # C = decorator(C)
+```
+
+插入一个包装器层来拦截随后的实例创建调用，而是返回一个不同的可调用对象：
+
+```python
+def decorator(C):
+    # Save or use class C
+    # Return a different callable: nested def, class with __call__, etc.
+    
+@decorator
+class C: ...            # C = decorator(C)
+```
+
+这样的一个类装饰器返回的可调用对象，通常创建并返回最初的类的一个新的实例，以某种方式来扩展对其接口的管理。例如，下面的实例插入一个对象来拦截一个类实例的未定义的属性：
+
+```python
+def decorator(cls):                             # On @ decoration
+    class Wrapper:
+        def __init__(self, *args):              # On instance creation
+            self.wrapped = cls(*args)
+        def __getattr__(self, name):            # On attribute fetch
+            return getattr(self.wrapped, name)
+    return Wrapper
+
+@decorator
+class C:                                       # C = decorator(C)
+    def __init__(self, x, y):                  # Run by Wrapper.__init__
+        self.attr = 'spam'
+
+x = C(6, 7)                                    # Really calls Wrapper(6, 7)
+print(x.attr)                                  # Runs Wrapper.__getattr__, prints "spam"
+```
+
+就像函数装饰器一样，类装饰器通常可以编写为一个创建并返回可调用的对象的“工厂”函数，或者使用`__init__`或`__call__`方法来拦截所有调用操作的类，或者是由此产生的一些组合。工厂函数通常在封闭的作用域引用中保持状态，类通常在属性中保持状态。
+
+##### 支持多个实例
+
+如下模式中的任意一种都支持多个包装的实例：
+
+```python
+def decorator(C):                     # On @ decoration
+    class Wrapper:
+        def __init__(self, *args):    # On instance creation: new Wrapper
+            self.wrapped = C(*args)   # Embed instance in instance
+    return Wrapper
+```
+
+```python
+class Wrapper: 
+    pass       # 省略具体实现
+    
+def decorator(C):                  # On @ decoration
+    def onCall(*args):             # On instance creation: new Wrapper
+        return Wrapper(C(*args))   # Embed instance in instance
+    return onCall
+```
 
 
 
+#### 装饰器嵌套
+
+这种形式的装饰器语法：
+
+```python
+@A
+@B
+@C
+def f(...):
+    ...
+```
+
+像下面这样运行：
+
+```python
+def f(...):
+    ...
+f = A(B(C(f)))
+```
+
+这里，最初的函数通过3个不同的装饰器传递，并且最终的可调用对象返回来分配给最初的名称。每个装饰器处理前一个的结果，这可能是最初的函数或一个插入的包装器。
+
+就像对函数一样，多个类装饰器导致了多个嵌套的函数调用，并且可能导致围绕实例创建调用的包装器逻辑的多个层。例如，如下的代码：
+
+```python
+@spam
+@eggs
+class C:
+    ...
+
+X = C()
+```
+
+等价于如下代码：
+
+```python
+class C:
+    ...
+C = spam(eggs(C))
+
+X = C()
+```
+
+例如，如下的什么也不做的装饰器只是返回被装饰的函数：
+
+```python
+def d1(F): return F
+def d2(F): return F
+def d3(F): return F
+
+@d1
+@d2
+@d3
+def func():          # func = d1(d2(d3(func)))
+    print('spam')
+
+func()               # Prints "spam"
+```
+
+**同样的语法在类上也有效！**
+
+然而，当装饰器插入包装器函数对象，调用的时候它们可能扩展最初的函数——如下的代码将其结果连接到一个装饰器层中，随着它从内向外地运行层：
+
+```python
+def d1(F): return lambda: 'X' + F()   # 使用lambda函数来实现包装器层（每个层在一个封闭的作用域里保持了包装的函数）。
+def d2(F): return lambda: 'Y' + F()   
+def d3(F): return lambda: 'Z' + F()   
+
+@d1
+@d2
+@d3
+def func(): # func = d1(d2(d3(func)))
+    return 'spam'
+
+print(func()) # Prints "XYZspam"
+```
+
+实际上，包装器可以采取函数、可调用的类以及更多形式。当设计良好的时候，装饰器嵌套允许我们以种类多样的方式来组合扩展步骤。
+
+
+
+#### 装饰器参数
+
+函数装饰器和类装饰器似乎都能接受参数，尽管实际上这些参数传递给了真正返回装饰器的一个可调用对象，而装饰器反过来又返回一个可调用对象。例如，如下代码：
+
+```python
+@decorator(A, B)
+def F(arg):
+    ...
+    
+F(99)
+```
+
+自动地映射到其对等的形式，其中装饰器是一个可调用对象，它返回实际的装饰器。返回的装饰器又返回一个可调用的对象，这个对象随后运行以调用最初的函数名：
+
+```python
+def F(arg):
+    ...
+F = decorator(A, B)(F) # Rebind F to result of decorator's return value
+F(99)                  # Essentially calls decorator(A, B)(F)(99)
+```
+
+装饰器参数在装饰发生之前就解析了，并且它们通常用来保持状态信息供随后的调用使用。例如，这个例子中的装饰器函数，可能采用如下的形式：
+
+```python
+def decorator(A, B):
+    # Save or use A, B
+    def actualDecorator(F):
+        # Save or use function F
+        # Return a callable: nested def, class with __call__, etc.
+        return callable
+    return actualDecorator
+```
+
+这个结构中的外围函数通常会把装饰器参数与状态信息分开保存，以便在实际的装饰器中使用，或者在它所返回的可调用对象中使用，或者在二者中都使用。这段代码在封闭的函数作用域引用中保存了状态信息参数，但是通常也可以使用类属性。
+
+换句话说，装饰器参数往往意味着可调用对象的3个层级：接受装饰器参数的一个可调用对象，它返回一个可调用对象以作为装饰器，该装饰器返回一个可调用对象来处理对最初的函数或类的调用。这3个层级的每一个都可能是一个函数或类，并且可能以作用域或类属性的形式保存了状态。
+
+
+
+
+
+#### 装饰器管理函数和类
+
+装饰器还可以作为在函数和类创建之后通过一个可调用对象传递它们的一种协议。因此，它可以用来调用任意的创建后处理：
+
+```python
+def decorate(O):
+    # Save or augment function or class O
+    return O
+
+@decorator
+def F(): ... # F = decorator(F)
+
+@decorator
+class C: ... # C = decorator(C)
+```
+
+只要以这种方式返回最初装饰的对象，而不是返回一个包装器，我们就可以管理函数和类自身，而不只是管理随后对它们的调用。
 
 
 
