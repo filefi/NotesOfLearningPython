@@ -2924,8 +2924,6 @@ def decorator(A, B):
 
 
 
-
-
 #### 装饰器管理函数和类
 
 装饰器还可以作为在函数和类创建之后通过一个可调用对象传递它们的一种协议。因此，它可以用来调用任意的创建后处理：
@@ -2947,6 +2945,419 @@ class C: ... # C = decorator(C)
 
 
 ### 39.3 编写函数装饰器
+
+#### 跟踪调用
+
+如下的代码定义并应用一个函数装饰器，来统计对装饰的函数的调用次数，并且针对每一次调用打印跟踪信息：
+
+```python
+# File decorator1.py
+
+class tracer:
+    def __init__(self, func): # On @ decoration: save original func
+        self.calls = 0
+        self.func = func
+    def __call__(self, *args): # On later calls: run original func
+        self.calls += 1
+        print('call %s to %s' % (self.calls, self.func.__name__))
+        self.func(*args)
+        
+@tracer
+def spam(a, b, c):       # spam = tracer(spam)   注意，用这个类装饰的每个函数将创建一个新的实例，带有自己保存的函数对象和调用计数器。
+    print(a + b + c)     # Wraps spam in a decorator object
+```
+
+注意，用这个类装饰的每个函数将创建一个新的实例，带有自己保存的函数对象和调用计数器。注意观察，`*args`参数语法如何用来打包和解包任意的多个传入参数。这一通用性使得这个装饰器可以用来包装带有任意多个参数的任何函数（这个版本还不能在类方法上工作，但是，我们将在本小节稍后修改这一点）。
+
+```python
+>>> from decorator1 import spam
+>>> spam(1, 2, 3)            # Really calls the tracer wrapper object
+call 1 to spam
+6
+>>> spam('a', 'b', 'c')      # Invokes __call__ in class
+call 2 to spam
+abc
+>>> spam.calls               # Number calls in wrapper state information
+2
+>>> spam
+<decorator1.tracer object at 0x02D9A730>
+```
+
+运行的时候，`tracer`类和装饰的函数分开保存，并且拦截对装饰的函数随后的调用，以便添加一个逻辑层来统计和打印每次调用。注意，调用的总数如何作为装饰的函数的一个属性显示——装饰的时候，`spam`实际上是tracer类的一个实例（对于进行类型检查的程序，可能还会衍生一次查找，但是通常是有益的）。
+
+对于函数调用，`@`装饰语法可能比修改每次调用来说明额外的逻辑层要更加方便，并且它避免了意外地直接调用最初的函数。考虑如下所示的非装饰器的对等代码：
+
+```python
+calls = 0
+def tracer(func, *args):
+    global calls
+    calls += 1
+    print('call %s to %s' % (calls, func.__name__))
+    func(*args)
+    
+def spam(a, b, c):
+    print(a, b, c)
+    
+>>> spam(1, 2, 3)            # Normal nontraced call: accidental?
+1 2 3
+>>> tracer(spam, 1, 2, 3)    # Special traced call without decorators
+call 1 to spam
+1 2 3
+```
+
+这一替代方法可以用在任何函数上，且不需要特殊的`@`语法，但是和装饰器版本不同：
+
+- 它在代码中调用函数的每个地方需要额外的语法。
+
+- 它的意图可能不够明显，并且它不能确保额外的层将会针对常规调用而调用。
+
+我们总是可以手动地重新绑定名称，所以装饰器不是必需的，但它们通常是最为方便的。
+
+
+
+#### 状态信息保持选项
+
+函数装饰器有各种选项来保持装饰的时候所提供的状态信息，以便在实际函数调用过程中使用。它们通常需要支持多个装饰的对象以及多个调用，但是，有多种方法来实现这些目标：**实例属性** 、**全局变量** 、**非局部变量** 和 **函数属性** ，都可以用于保持状态。
+
+##### 类实例属性
+
+例如，这里是前面的例子的一个扩展版本，其中添加了对关键字参数的支持，并且返回包装函数的结果，以支持更多的用例：
+
+```python
+class tracer:                               # State via instance attributes
+    def __init__(self, func):               # On @ decorator
+        self.calls = 0                      # Save func for later call
+        self.func = func
+    def __call__(self, *args, **kwargs):    # On call to original function
+        self.calls += 1
+        print('call %s to %s' % (self.calls, self.func.__name__))
+        return self.func(*args, **kwargs)
+
+@tracer
+def spam(a, b, c):     # Same as: spam = tracer(spam)
+    print(a + b + c)   # Triggers tracer.__init__
+
+@tracer
+def eggs(x, y):        # Same as: eggs = tracer(eggs)
+    print(x ** y)      # Wraps eggs in a tracer object
+    
+spam(1, 2, 3)          # Really calls tracer instance: runs tracer.__call__
+spam(a=4, b=5, c=6)    # spam is an instance attribute
+
+eggs(2, 16)            # Really calls tracer instance, self.func is eggs
+eggs(4, y=4)           # self.calls is per-decoration here
+```
+
+就像最初的版本一样，这里的代码使用类实例属性来显式地保存状态。包装的函数和调用计数器都是针对每个实例的信息——每个装饰都有自己的拷贝。注意`spam`和`eggs`函数的每一个都有自己的调用计数器，因为每个装饰都创建一个新的类实例。这个版本的输出如下所示：
+
+```
+c:\code> python decorator2.py
+call 1 to spam
+6
+call 2 to spam
+15
+call 1 to eggs
+65536
+call 2 to eggs
+256
+```
+
+尽管对于装饰函数有用，但是当应用于方法的时候，这种编码方案也有问题（随后更为详细地介绍）。
+
+
+
+##### 封闭作用域和全局变量（Enclosing scopes and globals）
+
+闭包函数（closure function），即具有封闭`def`作用域引用和嵌套`def`语句的函数，通常达到相同的效果，特别是针对静态数据，例如：被装饰是的最初的（original）函数。然而，在这个例子中，我们也需要封闭的作用域中的一个计数器，它随着每次调用而更改。由于Python 2.X不支持`nonlocal`语句，所以，在Python 2.X中，我们可以使用类和属性（正如我们前面所做的那样），或者使用全局声明把状态变量移出到 **全局作用域** ：
+
+```python
+calls = 0
+    def tracer(func):                    # State via enclosing scope and global
+        def wrapper(*args, **kwargs):    # Instead of class attributes
+            global calls                 # calls is global, not per-function
+            calls += 1
+            print('call %s to %s' % (calls, func.__name__))
+            return func(*args, **kwargs)
+        return wrapper
+
+@tracer
+def spam(a, b, c):      # Same as: spam = tracer(spam)
+    print(a + b + c)
+
+@tracer
+def eggs(x, y):         # Same as: eggs = tracer(eggs)
+    print(x ** y)
+
+spam(1, 2, 3)           # Really calls wrapper, assigned to spam
+spam(a=4, b=5, c=6)     # wrapper calls spam
+
+eggs(2, 16)             # Really calls wrapper, assigned to eggs
+eggs(4, y=4)            # Global calls is not per-decoration here!
+```
+
+遗憾的是，把计数器移出到共同的全局作用域允许像这样修改它们，也意味着它们将为每个包装的函数所共享。和类实例属性不同，全局计数器是跨程序的，而不是针对每个函数的——对于任何跟踪的函数调用，计数器都会递增。如果你比较这个版本与前一个版本的输出，就可以看出其中的区别：
+
+```
+c:\code> python decorator3.py
+call 1 to spam
+6
+call 2 to spam
+15
+call 3 to eggs
+65536
+call 4 to eggs
+256
+```
+
+
+
+##### 封闭作用域和非本地变量（Enclosing scopes and nonlocals）
+
+如果我们真的想要一个针对每个函数的计数器，要么像前面那样使用类，要么使用Python 3.X中的`nonlocal`语句。由于这一新的语句允许修改封闭的函数作用域变量，所以它们可以充当针对每次装饰的、可修改的数据：
+
+```python
+def tracer(func):                     # State via enclosing scope and nonlocal
+    calls = 0                         # Instead of class attrs or global
+    def wrapper(*args, **kwargs):     # calls is per-function, not global
+        nonlocal calls
+        calls += 1
+        print('call %s to %s' % (calls, func.__name__))
+        return func(*args, **kwargs)
+    return wrapper
+
+@tracer
+def spam(a, b, c):      # Same as: spam = tracer(spam)
+    print(a + b + c)
+
+@tracer
+def eggs(x, y):         # Same as: eggs = tracer(eggs)
+    print(x ** y)
+
+spam(1, 2, 3)           # Really calls wrapper, bound to func
+spam(a=4, b=5, c=6)     # wrapper calls spam
+
+eggs(2, 16)             # Really calls wrapper, bound to eggs
+eggs(4, y=4)            # Nonlocal calls _is_ per-decoration here
+```
+
+现在，由于封装的作用域变量不能跨程序而成为全局的，所以每个包装的函数再次有了自己的计数器，就像是针对类和属性一样。这里是在Python 3.X下运行时新的输出：
+
+```
+c:\code> py −3 decorator4.py
+call 1 to spam
+6
+call 2 to spam
+15
+call 1 to eggs
+65536
+call 2 to eggs
+256
+```
+
+
+
+##### 函数属性
+
+最后，如果你没有使用Python 3.X并且没有`nonlocal`语句，可能仍然能够针对某些可改变的状态使用函数属性来避免全局和类。从Python 2.1 开始，我们可以把任意属性分配给函数以附加它们，使用`func.attr = value`就可以了。因为工厂函数在每次调用时创建一个新的函数，所以它的属性能保存每次调用的状态信息。
+
+在我们的例子中，可以直接对状态使用`wrapper.calls`。如下的代码与前面的`nonlocal`版本一样地工作，因为计数器再一次是针对每个装饰的函数的，但是，它也可以在Python 2.X下运行：
+
+```python
+def tracer(func):                      # State via enclosing scope and func attr
+    def wrapper(*args, **kwargs):      # calls is per-function, not global
+        wrapper.calls += 1
+        print('call %s to %s' % (wrapper.calls, func.__name__))
+        return func(*args, **kwargs)
+    wrapper.calls = 0
+    return wrapper
+
+@tracer
+def spam(a, b, c):       # Same as: spam = tracer(spam)
+    print(a + b + c)
+
+@tracer
+def eggs(x, y):          # Same as: eggs = tracer(eggs)
+    print(x ** y)
+    
+spam(1, 2, 3)            # Really calls wrapper, assigned to spam
+spam(a=4, b=5, c=6)      # wrapper calls spam
+
+eggs(2, 16)              # Really calls wrapper, assigned to eggs
+eggs(4, y=4)             # wrapper.calls _is_ per-decoration here
+```
+
+注意，这种方法有效，只是因为名称`wrapper`保持在封闭的`tracer`函数的作用域中。
+
+
+
+#### 类错误1：装饰类方法
+
+
+
+##### 使用嵌套函数来装饰方法
+
+如果想要函数装饰器在简单函数和类方法上都能工作，最直接的解决方法之一是：把自己的函数装饰器编写为嵌套的`def`，以便对于包装器类实例和主体类实例都不需要依赖于单个的`self`实例参数。
+
+如下的替代方案使用Python 3.X的`nonlocal`。由于被装饰的方法重新绑定到简单的函数而不是实例对象，所以Python正确地传递了`Person`对象作为第一个参数，并且装饰器将其从`*args`中的第一项传递给真正的、装饰的方法的`self`参数：
+
+```python
+# calltracer.py
+# A call tracer decorator for both functions and methods
+
+def tracer(func):                     # Use function, not class with __call__
+    calls = 0                         # Else "self" is decorator instance only!
+    def onCall(*args, **kwargs):      # Or in 2.X+3.X: use [onCall.calls += 1]
+        nonlocal calls
+        calls += 1
+        print('call %s to %s' % (calls, func.__name__))
+        return func(*args, **kwargs)
+    return onCall
+
+
+if __name__ == '__main__':
+    # Applies to simple functions
+    @tracer
+    def spam(a, b, c):                       # spam = tracer(spam)
+        print(a + b + c)                     # onCall remembers spam
+        
+    @tracer
+    def eggs(N):
+        return 2 ** N
+    
+    spam(1, 2, 3)                            # Runs onCall(1, 2, 3)
+    spam(a=4, b=5, c=6)
+    print(eggs(32))
+    
+    # Applies to class-level method functions too!
+    class Person:
+        def __init__(self, name, pay):
+            self.name = name
+            self.pay = pay
+
+        @tracer
+        def giveRaise(self, percent):        # giveRaise = tracer(giveRaise)
+            self.pay *= (1.0 + percent)      # onCall remembers giveRaise
+
+        @tracer
+        def lastName(self):                  # lastName = tracer(lastName)
+            return self.name.split()[-1]
+
+    print('methods...')
+    bob = Person('Bob Smith', 50000)
+    sue = Person('Sue Jones', 100000)
+    print(bob.name, sue.name)
+    sue.giveRaise(.10)                       # Runs onCall(sue, .10)
+    print(int(sue.pay))
+    print(bob.lastName(), sue.lastName())    # Runs onCall(bob), lastName in scopes
+```
+
+这个版本在函数和方法上都有效：
+
+```
+c:\code> py −3 calltracer.py
+call 1 to spam
+6
+call 2 to spam
+15
+call 1 to eggs
+4294967296
+methods...
+Bob Smith Sue Jones
+call 1 to giveRaise
+110000
+call 1 to lastName
+call 2 to lastName
+Smith Jones
+```
+
+
+
+##### 使用描述符装饰方法
+
+由于描述符的`__get__`方法在调用的时候接收描述符类和主体类实例，因此当我们需要装饰器的状态以及最初的类实例来分派调用的时候，它很适合于装饰方法。考虑如下的替代的跟踪装饰器，它也是一个描述符：
+
+```python
+class tracer(object): # A decorator+descriptor
+    def __init__(self, func): # On @ decorator
+        self.calls = 0 # Save func for later call
+        self.func = func
+    def __call__(self, *args, **kwargs): # On call to original func
+        self.calls += 1
+        print('call %s to %s' % (self.calls, self.func.__name__))
+        return self.func(*args, **kwargs)
+    def __get__(self, instance, owner): # On method attribute fetch
+        return wrapper(self, instance)
+
+class wrapper:
+    def __init__(self, desc, subj): # Save both instances
+        self.desc = desc # Route calls back to deco/desc
+        self.subj = subj
+    def __call__(self, *args, **kwargs):
+        return self.desc(self.subj, *args, **kwargs) # Runs tracer.__call__
+
+    
+@tracer
+def spam(a, b, c): # spam = tracer(spam)
+    print(a + b + c)  # Uses __call__ only
+
+@tracer
+def eggs(N):
+    return 2 ** N
+
+# Applies to class-level method functions too!
+class Person:
+    def __init__(self, name, pay):
+        self.name = name
+        self.pay = pay
+    @tracer      # giveRaise = tracer(giveRaise)
+    def giveRaise(self, percent):      # Makes giveRaise a descriptor
+        self.pay *= (1.0 + percent)
+    @tracer
+    def lastName(self):                  
+        return self.name.split()[-1]
+```
+
+这和前面嵌套函数的代码一样有效。其操作因上下文而异：
+
+- 被装饰的 **函数** 只调用其`__call__`方法，而不会调用其`__get___`方法。
+- 被装饰的 **方法** 首先调用其`__get___`方法来解析`instance.method`方法名获取；`__get__`方法返回的`wrapper`类实例对象同时保存着装饰器（同时也是描述符）实例和主体类实例，然后调用`wrapper`类实例对象来完成调用表达式，并由此触发装饰器`tracer`的`__call__`方法。
+
+例如，要测试代码的调用：
+
+```python
+>>> sue = Person('Sue Jones', 100000)
+>>> sue
+<__main__.Person object at 0x7f3b93a8b390>
+>>> type(sue)
+<class '__main__.Person'>
+>>> sue.giveRaise(.10)       # Runs tracer.__get__()  -->  wrapper.__call__()  -->  tracer.__call__()
+call 1 to giveRaise
+>>> sue.giveRaise(.10)
+call 2 to giveRaise
+>>> sue.giveRaise(.10)
+call 3 to giveRaise
+```
+
+首先运行`tracer.__get__`，因为`Person`类的`giveRaise`属性已经通过函数装饰器重新绑定为一个描述符。然后，调用表达式触发返回的`wrapper`类实例对象的`__call__`方法，它返回来调用`tracer.__call__`。
+
+此外，我们也可以使用一个嵌套的函数和封闭的作用域引用来实现同样的效果——如下的版本和前面的版本一样的有效，通过为一个嵌套函数和作用域引用交换类和对象属性，但是，它所需的代码显著减少：
+
+```python
+class tracer(object):
+    def __init__(self, func): # On @ decorator
+        self.calls = 0 # Save func for later call
+        self.func = func
+    def __call__(self, *args, **kwargs): # On call to original func
+        self.calls += 1
+        print('call %s to %s' % (self.calls, self.func.__name__))
+        return self.func(*args, **kwargs)
+    def __get__(self, instance, owner): # On method fetch
+        def wrapper(*args, **kwargs): # Retain both inst
+            return self(instance, *args, **kwargs) # Runs __call__
+        return wrapper
+```
+
+
 
 
 
