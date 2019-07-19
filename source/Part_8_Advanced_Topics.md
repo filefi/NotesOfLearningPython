@@ -2565,6 +2565,8 @@ Python装饰器以2种相关的形式呈现：
 
 函数装饰器是一种关于函数的运行时声明，函数的定义需要遵守此声明。装饰器在紧挨着定义一个函数或方法的`def`语句之前的一行编写，并且它由`@`符号以及紧随其后的对于元函数的一个引用组成——这是管理另一个函数的一个函数（或其他的可调用对象）。
 
+**装饰器是一个单参数的可调用对象，它返回与F具有相同数目的参数的一个可调用对象。** 
+
 在编码方面，函数装饰器自动将如下的语法：
 
 ```python
@@ -2574,7 +2576,7 @@ def F(arg):
 F(99)           # Call function
 ```
 
-映射为这一对等的形式，其中装饰器是一个单参数的可调用对象，它返回与`F`具有相同数目的参数的一个可调用对象：
+映射为这一对等的形式：
 
 ```python
 def F(arg):
@@ -3352,6 +3354,8 @@ class Person:
 <__main__.Person object at 0x7f3b93a8b390>
 >>> type(sue)
 <class '__main__.Person'>
+>>> type(sue.giveRaise)      # giveRaise 其实是tracer的实例，但获取tracer的类实例属性会触发tracer.__get__(), 从而导致返回了一个wrapper的实例，而调用wrapper的实例会触发wrapper.__call__()，并最终调用tracer.__call__();
+<class '__main__.wrapper'>
 >>> sue.giveRaise(.10)       # Runs tracer.__get__()  -->  wrapper.__call__()  -->  tracer.__call__()
 call 1 to giveRaise
 >>> sue.giveRaise(.10)
@@ -3362,24 +3366,76 @@ call 3 to giveRaise
 
 首先运行`tracer.__get__`，因为`Person`类的`giveRaise`属性已经通过函数装饰器重新绑定为一个描述符。然后，调用表达式触发返回的`wrapper`类实例对象的`__call__`方法，它返回来调用`tracer.__call__`。
 
-此外，我们也可以使用一个嵌套的函数和封闭的作用域引用来实现同样的效果——如下的版本和前面的版本一样的有效，通过为一个嵌套函数和作用域引用交换类和对象属性，但是，它所需的代码显著减少：
+**此外，我们也可以使用一个嵌套的函数和封闭的作用域引用来实现同样的效果。** 如下的版本和前面的版本一样的有效，通过为一个嵌套函数和作用域引用交换类和对象属性，但是，它所需的代码显著减少：
 
 ```python
 class tracer(object):
-    def __init__(self, func): # On @ decorator
-        self.calls = 0 # Save func for later call
+    def __init__(self, func):              # On @ decorator
+        self.calls = 0                     # Save func for later call
         self.func = func
-    def __call__(self, *args, **kwargs): # On call to original func
+    def __call__(self, *args, **kwargs):   # On call to original func
         self.calls += 1
         print('call %s to %s' % (self.calls, self.func.__name__))
         return self.func(*args, **kwargs)
-    def __get__(self, instance, owner): # On method fetch
-        def wrapper(*args, **kwargs): # Retain both inst
-            return self(instance, *args, **kwargs) # Runs __call__
+    def __get__(self, instance, owner):              # On method fetch
+        def wrapper(*args, **kwargs):                # Retain both inst
+            return self(instance, *args, **kwargs)   # Runs tracer.__call__
         return wrapper
 ```
 
+**如果你想要装饰器在简单函数和类方法上都有效，最好使用基于嵌套函数的编码模式，而不是带有调用拦截的类。**
 
+
+
+#### 计时调用
+
+为了展示函数装饰器的各种各样能力的一个特殊样例，让我们来看一种不同的应用场景。下一个装饰器将对一个被装饰的函数的调用进行计时——既有针对一次调用的时间，也有所有调用的总的时间。该装饰器应用于两个函数，以便比较列表解析和`map`内置调用所需的时间：
+
+```python
+# File timerdeco1.py
+# Caveat: range still differs - a list in 2.X, an iterable in 3.X
+# Caveat: timer won't work on methods as coded (see quiz solution)
+
+import time, sys
+force = list if sys.version_info[0] == 3 else (lambda X: X)
+
+class timer:
+    def __init__(self, func):
+        self.func = func
+        self.alltime = 0
+    def __call__(self, *args, **kargs):
+        start = time.clock()
+        result = self.func(*args, **kargs)
+        elapsed = time.clock() - start
+        self.alltime += elapsed
+        print('%s: %.5f, %.5f' % (self.func.__name__, elapsed, self.alltime))
+        return result
+
+@timer
+def listcomp(N):
+    return [x * 2 for x in range(N)]
+
+@timer
+def mapcall(N):
+    return force(map((lambda x: x * 2), range(N)))
+
+result = listcomp(5)        # Time for this call, all calls, return value
+listcomp(50000)
+listcomp(500000)
+listcomp(1000000)
+print(result)
+print('allTime = %s' % listcomp.alltime)      # Total time for all listcomp 
+
+print('')
+result = mapcall(5)
+mapcall(50000)
+mapcall(500000)
+mapcall(1000000)
+print(result)
+print('allTime = %s' % mapcall.alltime)       # Total time for all mapcall calls
+
+print('\n**map/comp = %s' % round(mapcall.alltime / listcomp.alltime, 3))
+```
 
 
 
