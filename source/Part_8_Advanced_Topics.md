@@ -2922,6 +2922,28 @@ def decorator(A, B):
 
 换句话说，装饰器参数往往意味着可调用对象的3个层级：接受装饰器参数的一个可调用对象，它返回一个可调用对象以作为装饰器，该装饰器返回一个可调用对象来处理对最初的函数或类的调用。这3个层级的每一个都可能是一个函数或类，并且可能以作用域或类属性的形式保存了状态。
 
+简单实例：
+
+```python
+In [15]: def decorator(a, b):
+    ...:     def actualDecorator(F):
+    ...:         def func():
+    ...:             print("a=%s, b=%s" % (a, b))
+    ...:             print(type(F), F.__name__)
+    ...:         return func
+    ...:     return actualDecorator
+    ...:
+
+In [16]: @decorator(1,2)
+    ...: def test():
+    ...:     pass
+    ...:
+
+In [17]: test()
+a=1, b=2
+<class 'function'> test
+```
+
 
 
 #### 装饰器管理函数和类
