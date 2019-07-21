@@ -3419,25 +3419,189 @@ def listcomp(N):
 def mapcall(N):
     return force(map((lambda x: x * 2), range(N)))
 
-result = listcomp(5)        # Time for this call, all calls, return value
-listcomp(50000)
-listcomp(500000)
-listcomp(1000000)
-print(result)
-print('allTime = %s' % listcomp.alltime)      # Total time for all listcomp 
 
-print('')
-result = mapcall(5)
-mapcall(50000)
-mapcall(500000)
-mapcall(1000000)
-print(result)
-print('allTime = %s' % mapcall.alltime)       # Total time for all mapcall calls
+if __name__ = "__main__":
+    result = listcomp(5)        # Time for this call, all calls, return value
+    listcomp(50000)
+    listcomp(500000)
+    listcomp(1000000)
+    print(result)
+    print('allTime = %s' % listcomp.alltime)      # Total time for all listcomp 
 
-print('\n**map/comp = %s' % round(mapcall.alltime / listcomp.alltime, 3))
+    print('')
+    result = mapcall(5)
+    mapcall(50000)
+    mapcall(500000)
+    mapcall(1000000)
+    print(result)
+    print('allTime = %s' % mapcall.alltime)       # Total time for all mapcall calls
+
+    print('\n**map/comp = %s' % round(mapcall.alltime / listcomp.alltime, 3))
+```
+
+当在 Python 3.X和2.X中运行这段代码时，这个文件的自测试代码的输出如下：
+
+```
+c:\code> py −3 timerdeco1.py
+listcomp: 0.00001, 0.00001
+listcomp: 0.00499, 0.00499
+listcomp: 0.05716, 0.06215
+listcomp: 0.11565, 0.17781
+[0, 2, 4, 6, 8]
+allTime = 0.17780527629411225
+
+mapcall: 0.00002, 0.00002
+mapcall: 0.00988, 0.00990
+mapcall: 0.10601, 0.11591
+mapcall: 0.21690, 0.33281
+[0, 2, 4, 6, 8]
+allTime = 0.3328064956447921
+
+**map/comp = 1.872
 ```
 
 
+
+##### 装饰器对比每次调用计时（Decorators versus per-call timing）
+
+```python
+>>> def listcomp(N): [x * 2 for x in range(N)]
+>>> import timer                      # Chapter 21 techniques
+>>> timer.total(1, listcomp, 1000000)
+(0.1461295268088542, None)
+>>> import timeit
+>>> timeit.timeit(number=1, stmt=lambda: listcomp(1000000))
+0.14964829430189397
+```
+
+
+
+#### 添加装饰器参数
+
+为了使前面小节介绍的计时器装饰器更加可配置，我们对它适当编码，使它支持装饰器参数，以此来指定配置选项，这些选项可以根据每个装饰的函数而编码。例如，可以像下面这样添加标签：
+
+```python
+def timer(label=''):
+    def decorator(func):
+        def onCall(*args):         # Multilevel state retention:
+            ...                    # args passed to function
+            func(*args)            # func retained in enclosing scope
+            print(label, ...       # label retained in enclosing scope
+        return onCall
+    return decorator               # Returns the actual decorator
+      
+@timer('==>')                      # Like listcomp = timer('==>')(listcomp)
+def listcomp(N): ...               # listcomp is rebound to new onCall
+                  
+listcomp(...)                      # Really calls onCall
+```
+
+我们可以把这种结构用于定时器之中，来允许在装饰的时候传入一个标签和一个跟踪控制标志。下面是这么做的一个例子，编码在一个名为`timerdeco2.py`的模块文件中，以便它可以作为一个通用工具导入。它使用类作为第二个状态保留级别，而不是嵌套函数，但是最终结果是类似的：
+
+```python
+# timerdeco2.py
+
+import time
+
+def timer(label='', trace=True): # On decorator args: retain args
+    class Timer:
+        def __init__(self, func): # On @: retain decorated func
+            self.func = func
+            self.alltime = 0
+        def __call__(self, *args, **kargs): # On calls: call original
+            start = time.clock()
+            result = self.func(*args, **kargs)
+            elapsed = time.clock() - start
+            self.alltime += elapsed
+            if trace:
+                format = '%s %s: %.5f, %.5f'
+                values = (label, self.func.__name__, elapsed, self.alltime)
+                print(format % values)
+            return result
+    return Timer
+```
+
+我们在这里做的主要是把最初的`Timer`类嵌入一个封闭的函数中，以便创建一个作用域以保持装饰器参数。外围的`timer`函数在装饰发生前调用，并且它只是返回`Timer`类作为实际的装饰器。在装饰时，创建了`Timer`的一个实例来记住装饰函数自身，而且访问了位于封闭的函数作用域中的装饰器参数。
+
+不是把`self`测试代码嵌入这个文件，我们将在一个不同的文件中运行装饰器。下面是时间装饰器的一个客户，模块文件`testseqs.py`，再次将其应用于序列迭代器替代方案：
+
+```python
+# testseqs.py
+
+import sys
+from timerdeco2 import timer
+
+force = list if sys.version_info[0] == 3 else (lambda X: X)
+
+@timer(label='[CCC]==>')
+def listcomp(N): # Like listcomp = timer(...)(listcomp)
+    return [x * 2 for x in range(N)] # listcomp(...) triggers Timer.__call__
+
+@timer(trace=True, label='[MMM]==>')
+def mapcall(N):
+    return force(map((lambda x: x * 2), range(N)))
+
+for func in (listcomp, mapcall):
+    result = func(5) # Time for this call, all calls, return value
+    func(50000)
+    func(500000)
+    func(1000000)
+    print(result)
+    print('allTime = %s\n' % func.alltime) # Total time for all calls
+
+print('**map/comp = %s' % round(mapcall.alltime / listcomp.alltime, 3))
+```
+
+输出如下：
+
+```
+c:\code> py −3 testseqs.py
+[CCC]==> listcomp: 0.00001, 0.00001
+[CCC]==> listcomp: 0.00504, 0.00505
+[CCC]==> listcomp: 0.05839, 0.06344
+[CCC]==> listcomp: 0.12001, 0.18344
+[0, 2, 4, 6, 8]
+allTime = 0.1834406801777564
+
+[MMM]==> mapcall: 0.00003, 0.00003
+[MMM]==> mapcall: 0.00961, 0.00964
+[MMM]==> mapcall: 0.10929, 0.11892
+[MMM]==> mapcall: 0.22143, 0.34035
+[0, 2, 4, 6, 8]
+allTime = 0.3403542519173618
+
+**map/comp = 1.855
+```
+
+与通常一样，我们也可以交互地测试它，看看配置参数是如何应用的：
+
+```python
+>>> from timerdeco2 import timer
+>>> @timer(trace=False) # No tracing, collect total time
+... def listcomp(N):
+...     return [x * 2 for x in range(N)]
+...
+>>> x = listcomp(5000)
+>>> x = listcomp(5000)
+>>> x = listcomp(5000)
+>>> listcomp.alltime
+0.0037191417530599152
+>>> listcomp
+<timerdeco2.timer.<locals>.Timer object at 0x02957518>
+
+>>> @timer(trace=True, label='\t=>') # Turn on tracing, custom label
+... def listcomp(N):
+...     return [x * 2 for x in range(N)]
+...
+>>> x = listcomp(5000)
+=> listcomp: 0.00106, 0.00106
+>>> x = listcomp(5000)
+=> listcomp: 0.00108, 0.00214
+>>> x = listcomp(5000)
+=> listcomp: 0.00107, 0.00321
+>>> listcomp.alltime
+0.003208920466562404
+```
 
 
 
