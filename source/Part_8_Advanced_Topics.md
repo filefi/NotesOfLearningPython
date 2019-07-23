@@ -3607,6 +3607,132 @@ allTime = 0.3403542519173618
 
 ### 39.4 编写类装饰器
 
+类装饰器应用于类，它们可以用于管理类自身，或者用来拦截实例创建调用以管理实例。
+
+#### 单例类（Singleton Classes）
+
+由于类装饰器可以拦截实例创建调用，所以它们可以用来管理一个类的所有实例，或者扩展这些实例的接口。为了说明这点，这里的第一个类装饰器示例做了前面一项工作——管理一个类的所有实例。这段代码实现了传统的 ***单例编码模式*** ，其中最多只有一个类的一个实例存在。其单例（singleton）函数定义并返回一个函数用于管理实例，并且`@`语法自动在这个函数中包装了一个主体类（subject class）：
+
+```python
+# singletons.py
+
+# 3.X and 2.X: global table
+instances = {}                         # 为了同时支持2.X和3.X，使用全局变量
+def singleton(aClass):                 # On @ decoration
+    def onCall(*args, **kwargs):       # On instance creation
+        if aClass not in instances:    # One dict entry per class
+            instances[aClass] = aClass(*args, **kwargs)
+        return instances[aClass]
+    return onCall
+```
+
+用它来装饰想要增强单例模型的类：
+
+```python
+# singletons.py
+
+@singleton # Person = singleton(Person)
+class Person:                                 # Rebinds Person to onCall
+    def __init__(self, name, hours, rate):    # onCall remembers Person
+        self.name = name
+        self.hours = hours
+        self.rate = rate
+    def pay(self):
+        return self.hours * self.rate
+
+@singleton # Spam = singleton(Spam)
+class Spam:                                   # Rebinds Spam to onCall
+    def __init__(self, val):                  # onCall remembers Spam
+        self.attr = val
+
+bob = Person('Bob', 40, 10)                   # onCall('Bob', 40, 10)
+print(bob.name, bob.pay())
+
+sue = Person('Sue', 50, 20)                   # Same, single object
+print(sue.name, sue.pay())
+
+X = Spam(val=42)                              # One Person, one Spam
+Y = Spam(99)
+print(X.attr, Y.attr)
+```
+
+现在，当`Person`或`Spam`类稍后用来创建一个实例的时候，装饰器提供的包装逻辑层把实例构造（construction）调用指向了`onCall`，它确保每个类一个单个实例，而不管进行了多少次构建（construction）调用。这段代码的输出如下：
+
+```
+c:\code> python singletons.py
+Bob 400
+Bob 400
+42 42
+```
+
+
+
+##### 替代编码方案（Coding alternatives）
+
+使用`nonlocal`语句（Python 3.X可用）来改变封闭的作用域名称，我们在这里可以编写一个更为自包含的解决方案——后面的替代方案实现了同样的效果，它为每个类使用了一个 ***封闭作用域*** ，而不是为每个类使用一个全局表入口：
+
+```python
+# 3.X only: nonlocal
+def singleton(aClass): # On @ decoration
+    instance = None
+    def onCall(*args, **kwargs): # On instance creation
+        nonlocal instance # 3.X and later nonlocal
+        if instance == None:
+            instance = aClass(*args, **kwargs) # One scope per class
+        return instance
+    return onCall
+```
+
+In either Python 3.X or 2.X (2.6 and later), you can also code a self-contained solution with either function attributes or a class instead. The first of the following codes the former, leveraging the fact that there will be one `onCall` function per decoration—the object namespace serves the same role as an enclosing scope. The second uses one instance per decoration, rather than an enclosing scope, function object, or global table. In fact, the second relies on the same coding pattern that we will later see is a common decorator class blunder—here we want just one instance, but that’s not usually the case:
+
+```python
+# 3.X and 2.X: func attrs (alternative codings)
+def singleton(aClass): # On @ decoration
+    def onCall(*args, **kwargs): # On instance creation
+        if onCall.instance == None:
+            onCall.instance = aClass(*args, **kwargs) # One function per class
+        return onCall.instance
+    onCall.instance = None
+    return onCall
+
+```
+
+
+
+```python
+# 3.X and 2.X: classes (alternative codings)
+class singleton:
+    def __init__(self, aClass): # On @ decoration
+        self.aClass = aClass
+        self.instance = None
+    def __call__(self, *args, **kwargs): # On instance creation
+        if self.instance == None:
+            self.instance = self.aClass(*args, **kwargs) # One instance per class
+        return self.instance
+```
+
+
+
+
+
+
+
+#### 跟踪对象接口
+
+
+
+#### 类错误2：保持多个实例
+
+
+
+#### 装饰器与管理器函数的关系
+
+
+
+#### 为什么使用装饰器
+
+
+
 
 
 
