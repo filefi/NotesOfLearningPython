@@ -1,4 +1,4 @@
-# 第8部分 高级话题
+第8部分 高级话题
 
 ## 第37章 Unicode和字节字符串
 
@@ -3867,21 +3867,135 @@ sue = Wrapper(Person('Sue', rate=100, hours=60))
 
 #### 类错误2：保持多个实例
 
+使用正确的运算符重载协议，前一节例子中的装饰器函数看似可以不编写为一个函数，而编写为如下的一个类，但这会带来一个问题。
+
+```python
+class Tracer:
+    def __init__(self, aClass):              # On @decorator
+        self.aClass = aClass                 # Use instance attribute
+    def __call__(self, *args):               # On instance creation
+        self.wrapped = self.aClass(*args)    # ONE (LAST) INSTANCE PER CLASS!
+        return self
+    def __getattr__(self, attrname):
+        print('Trace: ' + attrname)
+        return getattr(self.wrapped, attrname)
+    
+@Tracer # Triggers __init__
+class Spam: # Like: Spam = Tracer(Spam)
+    def display(self):
+        print('Spam!' * 8)
+
+food = Spam()         # Triggers __call__
+food.display()        # Triggers __getattr__
+```
+
+正如我们在前面见到的，这个替代方案能够像前面一样处理多个类，但是，它对于一个给定的类的多个实例并不是很有效：每个实例构建调用会触发`__call__`，这会覆盖前面的实例。直接效果是`Tracer`只保存了一个实例，即最后创建的一个实例。自行体验一下看看这是如何发生的，但是，这里给出该问题的一个示例：
+
+```python
+@Tracer
+class Person: # Person = Tracer(Person)
+    def __init__(self, name):   # Wrapper bound to Person
+        self.name = name
+        
+bob = Person('Bob')             # bob is really a Wrapper
+print(bob.name)                 # Wrapper embeds a Person
+Sue = Person('Sue')
+print(sue.name)                 # sue overwrites bob
+print(bob.name)                 # OOPS: now bob's name is 'Sue'!
+```
+
+这段代码输出如下——由于这个跟踪器只有一个共享的实例，所以第二个实例覆盖了第一个实例：
+
+```
+Trace: name
+Bob
+Trace: name
+Sue
+Trace: name
+Sue
+```
+
+**我们为每个类创建了一个装饰器实例，但是不是针对每个类实例，这样一来，只有最后一个实例保持住了。这导致无法对同一个类的不同实例进行有效的状态保持。其解决方案就像我们在前面针对装饰方法的类错误一样，在于放弃基于类的装饰器。**
+
+前面的基于函数的`Tracer`版本确实可用于多个实例，因为每个实例构建调用都会创建一个新的`Wrapper`实例，而不是覆盖一个单个的共享的`Tracer`实例的状态。由于同样的原因，最初的非装饰器版本正确地处理多个实例。
 
 
-#### 装饰器与管理器函数的关系
+
+#### 装饰器VS管理器函数
+
+```python
+class Spam: # Nondecorator version
+    ... # Any class will do
+food = Wrapper(Spam()) # Special creation syntax
+
+@Tracer
+class Spam: # Decorator version
+    ... # Requires @ syntax at class
+food = Spam() # Normal creation syntax
+```
+
+
+
+```python
+instances = {}
+def getInstance(aClass, *args, **kwargs):
+    if aClass not in instances:
+        instances[aClass] = aClass(*args, **kwargs)
+    return instances[aClass]
+
+bob = getInstance(Person, 'Bob', 40, 10)        # Versus: bob = Person('Bob', 40, 10)
+```
+
+
+
+```python
+instances = {}
+def getInstance(object):
+    aClass = object.__class__
+    if aClass not in instances:
+        instances[aClass] = object
+    return instances[aClass]
+
+bob = getInstance(Person('Bob', 40, 10))      # Versus: bob = Person('Bob', 40, 10)
+```
+
+
+
+```python
+def func(x, y): # Nondecorator version
+    ... # def tracer(func, args): ... func(*args)
+result = tracer(func, (1, 2)) # Special call 
+
+@tracer
+def func(x, y): # Decorator version
+    ... # Rebinds name: func = tracer(func)
+result = func(1, 2) # Normal call syntax
+```
 
 
 
 #### 为什么使用装饰器
 
+***类装饰器* 有2个潜在的缺陷：**
 
+- **类型修改：** 正如我们所见到的，当插入包装器的时候，一个装饰器函数或类不会保持其最初的类型——其名称重新绑定到一个包装器对象，在使用对象名称或测试对象类型的程序中，这可能会很重要。在单体的例子中，装饰器和管理函数的方法都为实例保持了最初的类类型；在跟踪器的代码中，没有一种方法这么做，因为需要有包装器。
+- **额外调用：** 通过装饰添加一个包装层，在每次调用装饰对象的时候，会引发一次额外调用所需的额外性能成本——调用是相对耗费时间的操作，因此，装饰包装器可能会使程序变慢。在跟踪器代码中，两种方法都需要每个属性通过一个包装器层来指向；单体的示例通过保持最初的类类型而避免了额外调用。
 
+类似的问题也适用于 ***函数装饰器*** ：装饰和管理器函数都会导致额外调用，并且当装饰的时候通常会发生类型变化（不装饰的时候就没有）。
 
+**装饰器有3个主要优点：**
+
+- **明确的语法：** 装饰器使得扩展明确而显然。它们的@比可能在源文件中任何地方出现的特殊代码要容易识别，例如，在单体和跟踪器实例中，装饰器行似乎比额外代码更容易被注意到。此外，装饰器允许函数和实例创建调用使用所有Python程序员所熟悉的常规语法。
+- **代码可维护性：** 装饰器避免了在每个函数或类调用中重复扩展的代码。由于它们只出现一次，在类或者函数自身的定义中，它们排除了冗余性并简化了未来的代码维护。对于我们的单体和跟踪器示例，要使用管理器函数的方法，我们需要在每次调用的时候使用特殊的代码——最初以及未来必须做出的任何修改都需要额外的工作。
+- **一致性：** 装饰器使得程序员忘记使用必需的包装逻辑的可能性大大减少。这主要得益于两个优点——由于装饰是显式的并且只出现一次，出现在装饰的对象自身中，与必须包含在每次调用中的特殊代码相比较，装饰器促进了更加一致和统一的API使用。例如，在单体示例中，可能更容易忘了通过特殊代码来执行所有类创建调用，而这将会破坏单体的一致性管理。
+
+装饰器还促进了代码的封装以减少冗余性，并使得未来的维护代价最小化。尽管其他的编码结构化工具也能做到这些，但装饰器使得这对于扩展任务来说更自然。
 
 
 
 ### 39.5 直接管理函数和类
+
+因为装饰器通过装饰器代码来运行新的函数和类，从而有效地工作，它们也可以用来管理函数和类对象自身，而不只是管理对它们随后的调用。
 
 
 
