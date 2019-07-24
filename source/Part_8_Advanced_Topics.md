@@ -3674,13 +3674,13 @@ Bob 400
 ```python
 # 3.X only: nonlocal
 def singleton(aClass): # On @ decoration
-    instance = None
-    def onCall(*args, **kwargs): # On instance creation
-        nonlocal instance # 3.X and later nonlocal
+    instance = None                              # 每次调用singleton都重新分配一个新的局部变量instance
+    def onCall(*args, **kwargs):                 # On instance creation
+        nonlocal instance                        # 3.X and later nonlocal
         if instance == None:
-            instance = aClass(*args, **kwargs) # One scope per class
+            instance = aClass(*args, **kwargs)   # One scope per class
         return instance
-    return onCall
+    return onCall                                # 被装饰的类实际上被重新绑定为onCall函数对象
 ```
 
 In either Python 3.X or 2.X (2.6 and later), you can also code a self-contained solution with either function attributes or a class instead. The first of the following codes the former, leveraging the fact that there will be one `onCall` function per decoration—the object namespace serves the same role as an enclosing scope. The second uses one instance per decoration, rather than an enclosing scope, function object, or global table. In fact, the second relies on the same coding pattern that we will later see is a common decorator class blunder—here we want just one instance, but that’s not usually the case:
