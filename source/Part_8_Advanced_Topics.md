@@ -3683,12 +3683,16 @@ def singleton(aClass): # On @ decoration
     return onCall                                # 被装饰的类实际上被重新绑定为onCall函数对象
 ```
 
-In either Python 3.X or 2.X (2.6 and later), you can also code a self-contained solution with either function attributes or a class instead. The first of the following codes the former, leveraging the fact that there will be one `onCall` function per decoration—the object namespace serves the same role as an enclosing scope. The second uses one instance per decoration, rather than an enclosing scope, function object, or global table. In fact, the second relies on the same coding pattern that we will later see is a common decorator class blunder—here we want just one instance, but that’s not usually the case:
+
+
+在Python 3.X或2.6及其以上版本中，你也可以使用 **函数属性** 或者 **类** 来实现自包含的解决方案（self-contained solution）。
+
+下例中，由于对象的命名空间可以扮演和封闭作用域相同的角色，所以可以利用 ***函数属性*** 实现每个`onCall`函数对应一个装饰操作：
 
 ```python
 # 3.X and 2.X: func attrs (alternative codings)
-def singleton(aClass): # On @ decoration
-    def onCall(*args, **kwargs): # On instance creation
+def singleton(aClass):                                # On @ decoration
+    def onCall(*args, **kwargs):                      # On instance creation
         if onCall.instance == None:
             onCall.instance = aClass(*args, **kwargs) # One function per class
         return onCall.instance
@@ -3697,15 +3701,15 @@ def singleton(aClass): # On @ decoration
 
 ```
 
-
+下例中，使用每个实例对应一个装饰操作，而不是封闭作用域、函数对象或者全局作用域：
 
 ```python
 # 3.X and 2.X: classes (alternative codings)
 class singleton:
-    def __init__(self, aClass): # On @ decoration
+    def __init__(self, aClass):                          # On @ decoration
         self.aClass = aClass
         self.instance = None
-    def __call__(self, *args, **kwargs): # On instance creation
+    def __call__(self, *args, **kwargs):                 # On instance creation
         if self.instance == None:
             self.instance = self.aClass(*args, **kwargs) # One instance per class
         return self.instance
@@ -3713,11 +3717,151 @@ class singleton:
 
 
 
-
-
-
-
 #### 跟踪对象接口
+
+类装饰器的另一个常用场景是用来增强每个产生的实例的接口。类装饰器基本上可以在实例上安装一个包装器（wrapper）或代理（proxy）逻辑层，来以某种方式管理对其接口的访问。
+
+例如，在第31章中，`__getattr__`运算符重载方法作为包装嵌入的实例的整个对象接口的一种方法，以便实现委托编码模式。当获取未定义的属性名的时候，`__getattr__`会运行；我们可以使用这个钩子来拦截一个控制器类中的方法调用，并将它们传递给一个嵌入的对象。
+
+为了便于参考，这里给出最初的非装饰器委托示例，它在两个内置类型对象上工作：
+
+```python
+class Wrapper:
+    def __init__(self, object):
+        self.wrapped = object                    # Save object
+    def __getattr__(self, attrname):
+        print('Trace:', attrname)                # Trace fetch
+        return getattr(self.wrapped, attrname)   # Delegate fetch
+    
+>>> x = Wrapper([1,2,3])                         # Wrap a list
+>>> x.append(4)                                  # Delegate to list method
+Trace: append
+>>> x.wrapped                                    # Print my member
+[1, 2, 3, 4]
+>>> x = Wrapper({"a": 1, "b": 2})                # Wrap a dictionary
+>>> list(x.keys())                               # Delegate to dictionary method
+Trace: keys                                      # Use list() in 3.X
+['a', 'b']
+```
+
+在这段代码中，`Wrapper`类拦截了对任何包装的对象的属性的访问，打印出一条跟踪信息，并且使用内置函数`getattr`来终止对包装对象的请求。它特别跟踪包装的对象的类之外发出的属性访问。
+
+##### 使用类装饰器跟踪接口
+
+类装饰器为编写这种`__getattr__`技术来包装一个完整接口提供了一个替代的、方便的方法。例如，在Python 2.6和Python 3.X中，前面的类示例可能编写为一个类装饰器，来触发包装的实例创建，而不是把一个预产生的实例传递到包装器的构造函数中（在这里也用`**kargs`扩展了，以支持关键字参数，并且统计进行访问的次数）：
+
+```python
+# interfacetracer.py
+
+def Tracer(aClass): # On @ decorator
+    class Wrapper:
+        def __init__(self, *args, **kargs):         # On instance creation
+            self.fetches = 0
+            self.wrapped = aClass(*args, **kargs)   # Use enclosing scope name
+        def __getattr__(self, attrname):
+            print('Trace: ' + attrname)             # Catches all but own attrs
+            self.fetches += 1
+            return getattr(self.wrapped, attrname)  # Delegate to wrapped obj
+    return Wrapper
+
+if __name__ == '__main__':
+    @Tracer
+    class Spam: # Spam = Tracer(Spam)
+        def display(self):                          # Spam is rebound to Wrapper
+            print('Spam!' * 8)
+
+    @Tracer
+    class Person: # Person = Tracer(Person)
+        def __init__(self, name, hours, rate):      # Wrapper remembers Person
+            self.name = name
+            self.hours = hours
+            self.rate = rate
+        def pay(self):                              # Accesses outside class traced
+            return self.hours * self.rate           # In-method accesses not traced
+
+    food = Spam()                                   # Triggers Wrapper()
+    food.display()                                  # Triggers __getattr__
+    print([food.fetches])
+
+    bob = Person('Bob', 40, 50)                     # bob is really a Wrapper
+    print(bob.name)                                 # Wrapper embeds a Person
+    print(bob.pay())
+
+    print('')
+    sue = Person('Sue', rate=100, hours=60)         # sue is a different Wrapper
+    print(sue.name)                                 # with a different Person
+    print(sue.pay())
+
+    print(bob.name)                                 # bob has different state
+    print(bob.pay())
+    print([bob.fetches, sue.fetches])               # Wrapper attrs not traced
+```
+
+这里与我们前面在“编写函数装饰器”一节中遇到的跟踪器装饰器有很大不同。相反，通过拦截实例创建调用，这里的类装饰器允许我们跟踪整个对象接口，例如，对其任何属性的访问。
+
+```python
+c:\code> python interfacetracer.py
+Trace: display                                 # food.display()
+Spam!Spam!Spam!Spam!Spam!Spam!Spam!Spam!       
+[1]                                            # print([food.fetches])
+Trace: name                                    # print(bob.name)
+Bob                                            
+Trace: pay                                     # print(bob.pay())
+2000
+
+Trace: name                                    # print(sue.name)
+Sue
+Trace: pay                                     # print(sue.pay())
+6000
+Trace: name                                    # print(bob.name)
+Bob
+Trace: pay                                     # print(bob.pay())
+2000
+[4, 2]                                         # print([bob.fetches, sue.fetches])
+```
+
+
+
+##### 对内置类型应用类装饰器（Applying class decorators to built-in types）
+
+注意，前面的代码装饰了一个用户定义的类。就像是在本书第31章最初的例子中一样，我们也可以使用装饰器来包装一个内置的类型，例如列表，只要我们的子类允许装饰器语法，或者手动地执行装饰——对于`@`所在的行，装饰器语法需要一条`class`语句。
+
+在下面的代码中，由于装饰的间接作用，`x`实际是一个`Tracer`：
+
+```python
+>>> from interfacetracer import Tracer
+
+>>> @Tracer
+... class MyList(list): pass # MyList = Tracer(MyList)
+
+>>> x = MyList([1, 2, 3]) # Triggers Wrapper()
+>>> x.append(4) # Triggers __getattr__, append
+Trace: append
+>>> x.wrapped
+[1, 2, 3, 4]
+
+>>> WrapList = Tracer(list) # Or perform decoration manually
+>>> x = WrapList([4, 5, 6]) # Else subclass statement required
+>>> x.append(7)
+Trace: append
+>>> x.wrapped
+[4, 5, 6, 7]
+```
+
+这种装饰器方法允许我们把实例创建移动到装饰器自身之中，而不是要求传入一个预先生成的对象。尽管这好像是一个细小的差别，它允许我们保留常规的实例创建语法并且通常实现装饰器的所有优点。我们只需要用装饰器语法来扩展类，而不是要求所有的实例创建调用都通过一个包装器来手动地指向对象：
+
+```python
+@Tracer # Decorator approach
+class Person: ...
+bob = Person('Bob', 40, 50)
+sue = Person('Sue', rate=100, hours=60)
+
+class Person: ... # Nondecorator approach
+bob = Wrapper(Person('Bob', 40, 50))
+sue = Wrapper(Person('Sue', rate=100, hours=60))
+```
+
+假设你将会产生类的多个实例，并希望将这些增强特性应用于类的每个实例，装饰器通常将会在代码大小和代码可维护性上双赢。
 
 
 
