@@ -3997,11 +3997,127 @@ result = func(1, 2) # Normal call syntax
 
 因为装饰器通过装饰器代码来运行新的函数和类，从而有效地工作，它们也可以用来管理函数和类对象自身，而不只是管理对它们随后的调用。
 
+如下的简单实现定义了一个装饰器，它既应用于函数也应用于类，把对象添加到一个基于字典的注册中。由于它返回对象本身而不是一个包装器，所以它没有拦截随后的调用：
 
+```python
+# Registering decorated objects to an API
+from __future__ import print_function # 2.X
+
+registry = {}
+def register(obj): # Both class and func decorator
+    registry[obj.__name__] = obj # Add to registry
+    return obj # Return obj itself, not a wrapper
+
+@register
+def spam(x):
+    return(x ** 2) # spam = register(spam)
+
+@register
+def ham(x):
+    return(x ** 3)
+
+@register
+class Eggs: # Eggs = register(Eggs)
+    def __init__(self, x):
+        self.data = x ** 4
+    def __str__(self):
+        return str(self.data)
+    
+print('Registry:')
+for name in registry:
+    print(name, '=>', registry[name], type(registry[name]))
+    
+print('\nManual calls:')
+print(spam(2)) # Invoke objects manually
+print(ham(2)) # Later calls not intercepted
+X = Eggs(2)
+print(X)
+
+print('\nRegistry calls:')
+for name in registry:
+print(name, '=>', registry[name](2)) # Invoke from registry
+```
+
+当这段代码运行的时候，装饰的对象按照名称添加到注册中，但当随后调用它们的时候，它们仍然按照最初的编码工作，而没有指向一个包装器层。实际上，我们的对象可以手动运行，或从注册表内部运行：
+
+```
+c:\code> py −3 registry-deco.py
+Registry:
+spam => <function spam at 0x02969158> <class 'function'>
+ham => <function ham at 0x02969400> <class 'function'>
+Eggs => <class '__main__.Eggs'> <class 'type'>
+
+Manual calls:
+4
+8
+16
+
+Registry calls:
+spam => 4
+ham => 8
+Eggs => 16
+```
+
+例如，函数装饰器也可能用来处理函数属性，并且类装饰器可能动态地插入新的类属性，或者甚至新的方法。考虑如下的函数装饰器——它们把函数属性分配给记录信息，以便随后供一个API使用，但是，它们没有插入一个包含器层来拦截随后的调用：
+
+```python
+# Augmenting decorated objects directly
+>>> def decorate(func):
+        func.marked = True     # Assign function attribute for later use
+        return func
+
+>>> @decorate
+    def spam(a, b):
+        return a + b
+
+>>> spam.marked
+True
+
+>>> def annotate(text):        # Same, but value is decorator argument
+        def decorate(func):
+            func.label = text
+            return func
+        return decorate
+    
+>>> @annotate('spam data')
+    def spam(a, b):            # spam = annotate(...)(spam)
+        return a + b
+
+>>> spam(1, 2), spam.label
+(3, 'spam data')
+```
+
+注意，再次强调，装饰器是一个可调用对象，它接收可调用对象作为其参数，并返回一个可调用对象。装饰器所返回的可调用对象可是被装饰的可调用对象本身，也可以是另一个全新的可调用对象。当使用装饰器来管理被装饰的可调用对象的调用时，装饰器通常返回另一个全新的可调用对象；当使用装饰器来直接管理被装饰的可调用对象时，装饰器通常返回被装饰的可调用对象本身。
 
 
 
 ### 39.6 实例：“私有”和“公有”属性
+
+#### 实现私有属性
+
+
+
+#### 实现细节1
+
+##### 继承 VS 委托 (Inheritance versus delegation)
+
+##### 装饰器参数
+
+##### 状态保持和封闭作用域 (State retention and enclosing scopes)
+
+##### 使用`__dcit__`和`__slots__`以及其他虚拟变量名
+
+
+
+#### 公有声明的泛化 (Generalizing for Public Declarations, Too)
+
+
+
+#### 实现细节2
+
+
+
+
 
 
 
