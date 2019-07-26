@@ -1,4 +1,4 @@
-第8部分 高级话题
+# 第8部分 高级话题
 
 ## 第37章 Unicode和字节字符串
 
@@ -4093,7 +4093,114 @@ True
 
 ### 39.6 实例：“私有”和“公有”属性
 
-#### 实现私有属性
+#### 实现Private属性
+
+如下的类装饰器实现了一个用于类实例属性的`Private`声明，也就是说，属性存储在一个实例上，或者从其一个类继承而来。不接受从装饰的类的外部对这样的属性的获取和修改访问，但是，仍然允许类自身在其方法中自由地访问那些名称。
+
+这里的版本扩展了这一概念以验证属性获取，并且它使用委托而不是继承来实现该模型。实际上，在某种意义上，这只是我们前面遇到的属性跟踪器类装饰器的一个扩展。
+
+尽管这个例子利用了类装饰器的新语法糖来编写私有属性，但它的属性拦截最终仍然是基于我们在前面各章介绍的`__getattr__`和`__setattr__`运算符重载方法。当检测到访问一个私有属性的时候，这个版本使用`raise`语句引发一个异常，还有一条出错消息；异常可能在一个`try`中捕获，或者允许终止脚本。
+
+代码如下所示，在文件的底部还有一个self测试。它在Python 3.X和Python 2.6以上版本都能够工作，因为它使用了Python 3.X的`print`和`raise`语法，尽管它在Python 2.X下只是捕获运算符重载方法属性：
+
+```python
+"""
+File access1.py (3.X + 2.X)
+
+Privacy for attributes fetched from class instances.
+See self-test code at end of file for a usage example.
+
+Decorator same as: Doubler = Private('data', 'size')(Doubler).
+Private returns onDecorator, onDecorator returns onInstance,
+and each onInstance instance embeds a Doubler instance.
+"""
+
+traceMe = False
+def trace(*args):
+    if traceMe: print('[' + ' '.join(map(str, args)) + ']')
+        
+def Private(*privates):                                 # privates in enclosing scope
+    def onDecorator(aClass):                            # aClass in enclosing scope
+        class onInstance:                               # wrapped in instance attribute
+            def __init__(self, *args, **kargs):
+                self.wrapped = aClass(*args, **kargs)
+            def __getattr__(self, attr):                # My attrs don't call getattr
+                trace('get:', attr)                     # Others assumed in wrapped
+                if attr in privates:
+                    raise TypeError('private attribute fetch: ' + attr)
+                else:
+                    return getattr(self.wrapped, attr)
+            def __setattr__(self, attr, value):         # Outside accesses
+                trace('set:', attr, value)              # Others run normally
+                if attr == 'wrapped':                   # Allow my attrs
+                    self.__dict__[attr] = value         # Avoid looping
+                elif attr in privates:
+                    raise TypeError('private attribute change: ' + attr)
+                else:
+                    setattr(self.wrapped, attr, value)  # Wrapped obj attrs
+        return onInstance                               # Or use __dict__
+    return onDecorator
+
+if __name__ == '__main__':
+    traceMe = True
+    
+    @Private('data', 'size') # Doubler = Private(...)(Doubler)
+    class Doubler:
+        def __init__(self, label, start):
+            self.label = label                          # Accesses inside the subject class
+            self.data = start                           # Not intercepted: run normally
+        def size(self):
+            return len(self.data)                       # Methods run with no checking
+        def double(self):                               # Because privacy not inherited
+            for i in range(self.size()):
+                self.data[i] = self.data[i] * 2
+        def display(self):
+            print('%s => %s' % (self.label, self.data))
+
+    X = Doubler('X is', [1, 2, 3])
+    Y = Doubler('Y is', [-10, −20, −30])
+
+    # The following all succeed
+    print(X.label)                                      # Accesses outside subject class
+    X.display(); X.double(); X.display()                # Intercepted: validated, delegated
+    print(Y.label)
+    Y.display(); Y.double()
+    Y.label = 'Spam'
+    Y.display()
+    
+    # The following all fail properly
+    """
+    print(X.size())                   # prints "TypeError: private attribute fetch: size"
+    print(X.data)
+    X.data = [1, 1, 1]
+    X.size = lambda S: 0
+    print(Y.data)
+    print(Y.size())
+    """
+```
+
+当`traceMe`为`True`的时候，模块文件的self测试代码产生如下的输出。注意，装饰器是如何捕获和验证在包装的类之外运行的属性获取和赋值的，但是，却没有捕获类自身内部的属性访问：
+
+```
+c:\code> py −3 access1.py
+[set: wrapped <__main__.Doubler object at 0x00000000029769B0>]
+[set: wrapped <__main__.Doubler object at 0x00000000029769E8>]
+[get: label]
+X is
+[get: display]
+X is => [1, 2, 3]
+[get: double]
+[get: display]
+X is => [2, 4, 6]
+[get: label]
+Y is
+[get: display]
+Y is => [-10, −20, −30]
+[get: double]
+[set: label Spam]
+[get: display]
+Spam => [−20, −40, −60]
+```
 
 
 
@@ -4109,7 +4216,7 @@ True
 
 
 
-#### 公有声明的泛化 (Generalizing for Public Declarations, Too)
+#### Public声明的泛化 (Generalizing for Public Declarations, Too)
 
 
 
