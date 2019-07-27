@@ -4208,15 +4208,87 @@ Spam => [−20, −40, −60]
 
 ##### 继承 VS 委托 (Inheritance versus delegation)
 
+第30章中给出的粗糙的私有示例使用继承来混入`__setattr__`捕获访问。然而，继承使得这很困难，因为从类的内部或外部的访问之间的区分不是很直接的（内部访问应该允许常规运行，并且外部的访问应该限制）。要解决这个问题，第30章的示例需要继承类，以使用`__dict__`赋值来设置属性，这最多是一个不完整的解决方案。
+
+这里的版本使用的委托（在另一个对象中嵌入一个对象），而不是继承。这种模式更好地适合于我们的任务，因为它使得区分主体对象的内部访问和外部访问容易了很多。对主体对象的来自外部的属性访问，由包装器层的重载方法拦截，并且如果合法的话，委托给类。类自身内部的访问（例如，通过其方法代码内的`self`）没有拦截并且允许不经检查而常规运行，因为这里没有继承私有的属性。
+
 ##### 装饰器参数
+
+这里使用的类装饰器接受任意多个参数，以命名私有属性。然而，真正发生的情况是，参数传递给了`Private`函数，并且`Private`返回了应用于主体类的装饰器函数。也就是说，在装饰器发生之前使用这些参数；`Private`返回装饰器，装饰器反过来把私有的列表作为一个封闭作用域应用来“记住”。
 
 ##### 状态保持和封闭作用域 (State retention and enclosing scopes)
 
+说到封闭的作用域，在这段代码中，实际上用到了3个层级的状态保持：
+
+- `Private`的参数在装饰发生前使用，并且作为一个封闭作用域引用保持，以用于`onDecorator`和`onInstance`中。
+- `onDecorator`的类参数在装饰时使用，并且作为一个封闭作用域引用保持，以便在实例构建时使用。
+- 包装的实例对象保存为`onInstance`中的一个实例属性，以便随后从类外部访问属性的时候使用。
+
 ##### 使用`__dcit__`和`__slots__`以及其他虚拟变量名
+
+这段代码中`__setattr__`依赖于一个实例对象的`__dict__`属性命名空间字典，以设置`onInstance`自己的包装属性。正如我们在上一章所了解到的，不能直接赋值一个属性而避免循环。然而，它使用了setattr内置函数而不是`__dict__`来设置包装对象自身之中的属性。此外，`getattr`用来获取包装对象中的属性，因为它们可能存储在对象自身中或者由对象继承。
+
+Because of that, this code will work for most classes—including those with “virtual”
+class-level attributes based on slots, properties, descriptors, and even `__getattr__` and
+its ilk. By assuming a namespace dictionary for itself only and using storage-neutral
+tools for the wrapped object, the wrapper class avoids limitations inherent in other
+tools.
+
+因此，这段代码将对大多数类有效。
+
+你可能还记得，在第31章中介绍过，带有`__slots__`的新式类不能把属性存储到一个`__dict__`中。然而，由于我们在这里只是在`onInstance`层级依赖于一个`__dict__`，而不是在包装的实例中，并且因为`setattr`和`getattr`应用于基于`__dict__`和`__slots__`的属性，所以我们的装饰器应用于使用任何一种存储方案的类。
 
 
 
 #### Public声明的泛化 (Generalizing for Public Declarations, Too)
+
+```python
+"""
+File access2.py (3.X + 2.X)
+
+Class decorator with Private and Public attribute declarations.
+
+Controls external access to attributes stored on an instance, or
+Inherited by it from its classes. Private declares attribute names
+that cannot be fetched or assigned outside the decorated class,
+and Public declares all the names that can.
+
+Caveat: this works in 3.X for explicitly named attributes only: __X__
+operator overloading methods implicitly run for built-in operations
+do not trigger either __getattr__ or __getattribute__ in new-style
+classes. Add __X__ methods here to intercept and delegate built-ins.
+"""
+
+traceMe = False
+def trace(*args):
+    if traceMe: print('[' + ' '.join(map(str, args)) + ']')
+        
+def accessControl(failIf):
+def onDecorator(aClass):
+class onInstance:
+def __init__(self, *args, **kargs):
+self.__wrapped = aClass(*args, **kargs)
+def __getattr__(self, attr):
+trace('get:', attr)
+if failIf(attr):
+raise TypeError('private attribute fetch: ' + attr)
+else:
+return getattr(self.__wrapped, attr)
+def __setattr__(self, attr, value):
+trace('set:', attr, value)
+if attr == '_onInstance__wrapped':
+self.__dict__[attr] = value
+elif failIf(attr):
+raise TypeError('private attribute change: ' + attr)
+else:
+setattr(self.__wrapped, attr, value)
+return onInstance
+return onDecorator
+def Private(*attributes):
+return accessControl(failIf=(lambda attr: attr in attributes))
+def Public(*attributes):
+return accessControl(failIf=(lambda attr: attr not in attributes))
+```
 
 
 
