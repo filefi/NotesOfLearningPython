@@ -4228,15 +4228,9 @@ Spam => [−20, −40, −60]
 
 这段代码中`__setattr__`依赖于一个实例对象的`__dict__`属性命名空间字典，以设置`onInstance`自己的包装属性。正如我们在上一章所了解到的，不能直接赋值一个属性而避免循环。然而，它使用了setattr内置函数而不是`__dict__`来设置包装对象自身之中的属性。此外，`getattr`用来获取包装对象中的属性，因为它们可能存储在对象自身中或者由对象继承。
 
-Because of that, this code will work for most classes—including those with “virtual”
-class-level attributes based on slots, properties, descriptors, and even `__getattr__` and
-its ilk. By assuming a namespace dictionary for itself only and using storage-neutral
-tools for the wrapped object, the wrapper class avoids limitations inherent in other
-tools.
+因此，这段代码将对大多数类有效，包括那些基于slots，特性 (properties) ，甚至`__getattr__`等具有“虚拟”类级别 (class-level) 的属性。
 
-因此，这段代码将对大多数类有效。
-
-你可能还记得，在第31章中介绍过，带有`__slots__`的新式类不能把属性存储到一个`__dict__`中。然而，由于我们在这里只是在`onInstance`层级依赖于一个`__dict__`，而不是在包装的实例中，并且因为`setattr`和`getattr`应用于基于`__dict__`和`__slots__`的属性，所以我们的装饰器应用于使用任何一种存储方案的类。
+你可能还记得，在第32章中介绍过，带有`__slots__`的新式类不能把属性存储到一个`__dict__`中。然而，由于我们在这里只是在`onInstance`层级依赖于一个`__dict__`，而不是在包装的实例中，并且因为`setattr`和`getattr`应用于基于`__dict__`和`__slots__`的属性，所以我们的装饰器应用于使用任何一种存储方案的类。同理，装饰器也适用于新式的特性和类似工具。不管装饰器代理对象本身的属性如何，被委托的变量名将会在被包装的实例中重新查找。
 
 
 
@@ -4264,30 +4258,72 @@ def trace(*args):
     if traceMe: print('[' + ' '.join(map(str, args)) + ']')
         
 def accessControl(failIf):
-def onDecorator(aClass):
-class onInstance:
-def __init__(self, *args, **kargs):
-self.__wrapped = aClass(*args, **kargs)
-def __getattr__(self, attr):
-trace('get:', attr)
-if failIf(attr):
-raise TypeError('private attribute fetch: ' + attr)
-else:
-return getattr(self.__wrapped, attr)
-def __setattr__(self, attr, value):
-trace('set:', attr, value)
-if attr == '_onInstance__wrapped':
-self.__dict__[attr] = value
-elif failIf(attr):
-raise TypeError('private attribute change: ' + attr)
-else:
-setattr(self.__wrapped, attr, value)
-return onInstance
-return onDecorator
+    def onDecorator(aClass):
+        class onInstance:
+            def __init__(self, *args, **kargs):
+                self.__wrapped = aClass(*args, **kargs)
+            def __getattr__(self, attr):
+                trace('get:', attr)
+                if failIf(attr):
+                    raise TypeError('private attribute fetch: ' + attr)
+                else:
+                    return getattr(self.__wrapped, attr)
+            def __setattr__(self, attr, value):
+                trace('set:', attr, value)
+                if attr == '_onInstance__wrapped':
+                    self.__dict__[attr] = value
+                elif failIf(attr):
+                    raise TypeError('private attribute change: ' + attr)
+                else:
+                    setattr(self.__wrapped, attr, value)
+        return onInstance
+    return onDecorator
+
 def Private(*attributes):
-return accessControl(failIf=(lambda attr: attr in attributes))
+    return accessControl(failIf=(lambda attr: attr in attributes))
+
 def Public(*attributes):
-return accessControl(failIf=(lambda attr: attr not in attributes))
+    return accessControl(failIf=(lambda attr: attr not in attributes))
+```
+
+
+
+```python
+>>> from access2 import Private, Public
+
+>>> @Private('age')                            # Person = Private('age')(Person)
+    class Person:                              # Person = onInstance with state
+        def __init__(self, name, age):
+            self.name = name
+            self.age = age                     # Inside accesses run normally
+
+>>> X = Person('Bob', 40)
+>>> X.name                                     # Outside accesses validated
+'Bob'
+>>> X.name = 'Sue'
+>>> X.name
+'Sue'
+>>> X.age
+TypeError: private attribute fetch: age
+>>> X.age = 'Tom'
+TypeError: private attribute change: age
+        
+>>> @Public('name')
+    class Person:
+        def __init__(self, name, age):
+            self.name = name
+            self.age = age
+            
+>>> X = Person('bob', 40)                      # X is an onInstance
+>>> X.name                                     # onInstance embeds Person
+'bob'
+>>> X.name = 'Sue'
+>>> X.name
+'Sue'
+>>> X.age
+TypeError: private attribute fetch: age
+>>> X.age = 'Tom'
+TypeError: private attribute change: age
 ```
 
 
