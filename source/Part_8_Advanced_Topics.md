@@ -4478,11 +4478,34 @@ def accessControl(failIf):
 
 ###### Coding variations: Routers, descriptors, automation.
 
+```python
+class BuiltinsMixin:
+    def reroute(self, attr, *args, **kargs):
+        return self.__class__.__getattr__(self, attr)(*args, **kargs)
+    def __add__(self, other):
+        return self.reroute('__add__', other)
+    def __str__(self):
+        return self.reroute('__str__')
+    def __getitem__(self, index):
+        return self.reroute('__getitem__', index)
+    def __call__(self, *args, **kargs):
+        return self.reroute('__call__', *args, **kargs)
+    # plus any others needed
 
+```
 
 
 
 ##### Should operator methods be validated?
+
+Adding support for operator overloading methods is required of interface proxies in general, to delegate calls correctly. In our specific privacy application, though, it also raises some additional design choices. In particular, privacy of operator overloading methods differs per implementation:
+
+- Because they invoke `__getattr__`, the rerouter mix-ins require either that all `__X__` names accessed be listed in Public decorations, or that Private be used instead when operator overloading is present in clients. In classes that use overloading heavily, Public may be impractical.Because they bypass `__getattr__` entirely, as coded here both the inline scheme and `self._wrapped` mix-ins do not have these constraints, but they preclude builtin operations from being made private, and cause built-in operation dispatch to work asymmetrically from both explicit `__X__` calls by-name and 2.X’s default classic classes.
+- Because they bypass `__getattr__` entirely, as coded here both the inline scheme and `self._wrapped` mix-ins do not have these constraints, but they preclude builtin operations from being made private, and cause built-in operation dispatch towork asymmetrically from both explicit `__X__` calls by-name and 2.X’s default classic classes.
+- Python 2.X classic classes have the first bullet’s constraints, simply because all`__X__` names are routed through `__getattr__` automatically.
+- Operator overloading names and protocols differ between 2.X and 3.X, makingtruly cross-version decoration less than trivial (e.g., Public decorators may need tolist names from both lines).
+
+We’ll leave final policy here a TBD, but some interface proxies might prefer to allow `__X__` operator names to always pass unchecked when delegated. In the general case, though, a substantial amount of extra code is required to accommodate 3.X’s new-style classes as delegation proxies—in principle, every operator overloading method that is no longer dispatched as a normal instance attribute automatically will need to be defined redundantly in a general tool class like this privacy decorator. This is why this extension is omitted in our code: there are potentially more than 50 such methods! Because all its classes are new-style, delegation-based code is more difficult—though not necessarily impossible—in Python 3.X.
 
 
 
