@@ -4236,6 +4236,16 @@ Spam => [−20, −40, −60]
 
 #### Public声明的泛化 (Generalizing for Public Declarations, Too)
 
+既然有了一个`Private`实现，泛化其代码以考虑`Public`声明就很简单了——它们基本上是`Private`声明的反过程，因此，我们只需要取消内部测试。本节列出的实例允许一个类使用装饰器来定义一组`Private`或`Public`的实例属性（存储在一个实例上的属性，或者从其类继承的属性），使用如下的语法：
+
+- `Private`声明类实例的那些不能获取或赋值的属性，而从类的方法的代码内部获取或赋值除外。也就是说，任何声明为`Private`的名称都不能从类的外部访问，而任何没有声明为`Private`的名称都可以自由地从类的外部获取或赋值。
+- `Public`声明了一个类的实例属性，它可以从类的外部以及在类的方法内部获取和访问。也就是说，声明为`Public`的任何名称，可以从任何地方自由地访问，而没有声明为`Public`的任何名称，不能从类的外部访问。
+
+`Private`和`Public`声明规定为互斥的：当使用了`Private`，所有未声明的名称都被认为是`Public`的；并且当使用了`Public`，所有未声明的名称都被认为是`Private`。它们基本上相反，尽管未声明的、不是由类方法创建的名称行为略有不同——它们可以赋值并且由此从类的外部在`Private`之下创建（所有未声明的名称都是可以访问的），但不是在`Public`下创建的（所有未声明的名称都是不可访问的）。
+
+注意，这个方案在顶层添加了额外的第4层状态保持，超越了前面描述的3个层次：`lambda`所使用的测试函数保存在一
+个额外的封闭作用域中。这个示例编写为可以在Python 3.X和2.6及其以上版本中运行，尽管它在Python 3.X下运行的时候带有一个缺陷（在文件的文档字符串之后简短地说明，并且在代码之后详细说明）：
+
 ```python
 """
 File access2.py (3.X + 2.X)
@@ -4270,7 +4280,7 @@ def accessControl(failIf):
                     return getattr(self.__wrapped, attr)
             def __setattr__(self, attr, value):
                 trace('set:', attr, value)
-                if attr == '_onInstance__wrapped':
+                if attr == '_onInstance__wrapped':      # 因为使用了伪私有变量__wrapped，Python自动将其扩展为_onInstance__wrapped
                     self.__dict__[attr] = value
                 elif failIf(attr):
                     raise TypeError('private attribute change: ' + attr)
@@ -4286,7 +4296,7 @@ def Public(*attributes):
     return accessControl(failIf=(lambda attr: attr not in attributes))
 ```
 
-
+这里在交互提示模式下快速地看看这些类装饰器的使用。正如所介绍的那样，非`Private`或`Public`名称可以从主体类之外访问和修改，但是`Private`或非`Public`的名称不可以：
 
 ```python
 >>> from access2 import Private, Public
@@ -4330,13 +4340,187 @@ TypeError: private attribute change: age
 
 #### 实现细节2
 
+##### 使用`__X`伪私有变量名 (Using `__X` pseudoprivate names)
+
+除了泛化，这个版本还使用了Python的`__X`伪私有名称压缩功能（我们在第31章遇到过），来把包装的属性局部化为控制类，通过自动将其作为类名的前缀就可以做到。这避免了前面的版本与一个真实的、包装类可能使用的包装属性冲突的风险，并且它也是一个有用的通用工具。然而，它不是很“私有”，因为压缩的名称可以在类之外自由地使用。注意，在`__setattr__`中，我们也必须使用完整扩展的名称字符串`'_onInstance__wrapped'`，因为这是Python对其的修改。
+
+##### 打破私有性 (Breaking privacy)
+
+尽管这个例子确实实现了对一个实例及其类的属性的访问控制，它可能以各种方式破坏了这些控制——例如，通过检查包装属性的显式扩展版本（`bob.pay`可能无效，因为完全压缩的`bob._onInstance__wrapped.pay`可能会有效）。如果你必须显式地这么做，这些控制可能对于常规使用来说足够了。当然，私有控制通常在任何语言中都会遭到破坏，如果你足够努力地尝试的话（#define private public在某些C++实现中也可能有效）。尽管访问控制可以减少意外修改，但这样的情况大多取决于使用任何语言的程序员。不管何时，源代码可能会被修改，访问控制总是管道流中的一小部分。
+
+##### 装饰器的权衡 (Decorator tradeoffs)
+
+不用装饰器，我们也可以实现同样的结果，通过使用管理器函数或者手动编写装饰器的名称重绑定；然而，装饰器语法使得代码更加一致而明确。这一方法以及任何其他基于包装的方法的主要潜在缺点是，属性访问导致额外调用，并且装饰的类的实例并不真的是最初的装饰类的实例——例如，如果你用`X.__class__`或`isinstance(X, C)`测试它们的类型，将会发现它们是包装类的实例。除非你计划在对象类型上进行内省，否则类型问题可能是不相关的。
+
+
+
+#### 开放问题 (Open Issues)
+
+Most notably, this tool turns in mixed performance on operator overloading methods if they are used by client classes.
+
+As coded, the proxy class is a classic class when run under 2.X, but a new-style classwhen run by 3.X. As such, the code supports any client class in 2.X, but in 3.X fails tovalidate or delegate operator overloading methods dispatched implicitly by built-in operations, unless they are redefined in the proxy. Clients that do not use operator overloading are fully supported, but others may require additional code in 3.X.
+
+Importantly, this is not a new-style class issue here, it’s a Python version issue—the same code runs differently and fails in 3.X only. Because the nature of the wrapped object’s class is irrelevant to the proxy, we are concerned only with the proxy’s own code, which works under 2.X but not 3.X.
+
+
+
+##### 缺陷：运算符重载方法无法在Python 3.X下委托 (Caveat: Implicitly run operator overloading methods fail to delegate under 3.X)
+
+就像使用`__getattr__`的所有的基于委托的类，这个装饰器只对常规命名的属性能够跨版本工作。像`__str__`和`__add__`这样在新式类下不同工作的运算符方法，在Python 3.0下运行的时候，如果定义了嵌入的对象，将无法有效到达。
+
+正如我们在上一章所了解到的， 传统类通常在运行时在实例中查找运算符重载名称，但新式类不这么做——它们完全略过实例，在类中查找这样的方法。因此，在Python 2.X的新式类和Python 3.X的所有类中，`__X__`运算符重载方法显式地针对内置操作运行，不会触发`__getattr__`和`__getattribute__`。这样的属性获取将会和我们的`onInstance.__getattr__`一起忽略，因此，它们无法验证或委托。
+
+我们的装饰器类没有编写为新式类（通过派生自`object`），因此，如果在Python 2.X下运行，它将会捕获运算符重载方法。由于在Python 3.X下所有的类自动都是新式类，如果它们在嵌入的对象上编码，这样的方法将会失效。Python 3.X中最简单的解决方案是，在`onInstance`中重新冗余地定义所有那些可能在包装的对象中用到的运算符重载方法。例如，可以手动添加额外的方法，可以通过工具来自动完成部分任务（例如，使用类装饰器或者下一章将要介绍的元类），或者通过在超类中定义。
+
+同样的代码在Python 3.X下运行的时候，显式地调用`__str__`和`__add__`将会忽略装饰器的`__getattr__`，并且在装饰器类之中或其上查找定义；`print`最终查找到从类类型继承的默认显示（从技术上讲，是从Python 3.X中隐藏的`object`超类），并且`+`产生一个错误，因为没有默认继承：
+
+```python
+C:\code> c:\python33\python
+>>> from access2 import Private
+>>> @Private('age')
+class Person:
+    def __init__(self):
+        self.age = 42
+    def __str__(self):
+        return 'Person: ' + str(self.age)
+    def __add__(self, yrs):
+        self.age += yrs
+>>> X = Person()           # Name validations still work
+>>> X.age                  # But 3.X fails to delegate built-ins!
+TypeError: private attribute fetch: age
+>>> print(X)
+<access2.accessControl.<locals>.onDecorator.<locals>.onInstance object at ...etc>
+>>> X + 10
+TypeError: unsupported operand type(s) for +: 'onInstance' and 'int'
+>>> print(X)
+<access2.accessControl.<locals>.onDecorator.<locals>.onInstance object at ...etc>
+Strangely, this occurs only for dispatch from built-in operations; explicit direct calls
+```
+
+使用替代的`__getattribute__`方法在这里帮不上忙——尽管它定义为捕获每次属性引用（而不只是未定义的名称），它也不会由内置操作运行。我们在本书第38章介绍的Python的特性功能，在这里也帮不上忙。
+
+##### Approaches to redefining operator overloading methods for 3.X
+
+正如前面所提到的，Python 3.X中最直接的解决方案是：在类似装饰器的基于委托的类中，冗余地重新定义可能在嵌入对象中出现的运算符重载名称。这种方法并不理想，因为它产生了一些代码冗余，特别是与Python 2.X的解决方案相比较尤其如此。然而，这不会有太大的编码工作，在某种程度上可以使用工具或超类来自动完成，足以使装饰器在Python 3.X下工作，并且也允许运算符重载名称声明为`Private`或`Public`（假设每个运算符重载方法内部都运行failIf测试）。
+
+###### Inline definition.
+
+For instance, the following is an inline redefinition approach—add method redefinitions to the proxy for every operator overloading method a wrapped object may define itself, to catch and delegate. We’re adding just four operation interceptors to illustrate, but others are similar (new code is in bold font here):
+
+```python
+def accessControl(failIf):
+    def onDecorator(aClass):
+        class onInstance:
+            def __init__(self, *args, **kargs):
+                self.__wrapped = aClass(*args, **kargs)
+                
+            # Intercept and delegate built-in operations specifically
+            def __str__(self):
+                return str(self.__wrapped)
+            def __add__(self, other):
+                return self.__wrapped + other # Or getattr(x, '__add__')(y)
+            def __getitem__(self, index):
+                return self.__wrapped[index] # If needed
+            def __call__(self, *args, **kargs):
+                return self.__wrapped(*args, **kargs) # If needed
+            # plus any others needed
+            
+            # Intercept and delegate by-name attribute access generically
+            def __getattr__(self, attr): ...
+            def __setattr__(self, attr, value): ...
+        return onInstance
+    return onDecorator
+```
+
+
+
+###### Mix-in superclasses.
+
+```python
+class BuiltinsMixin:
+    def __add__(self, other):
+        return self.__class__.__getattr__(self, '__add__')(other)
+    def __str__(self):
+        return self.__class__.__getattr__(self, '__str__')()
+    def __getitem__(self, index):
+        return self.__class__.__getattr__(self, '__getitem__')(index)
+    def __call__(self, *args, **kargs):
+        return self.__class__.__getattr__(self, '__call__')(*args, **kargs)
+    # plus any others needed
+
+def accessControl(failIf):
+    def onDecorator(aClass):
+        class onInstance(BuiltinsMixin):
+            #...rest unchanged...
+            def __getattr__(self, attr): ...
+            def __setattr__(self, attr, value): ...
+    
+class BuiltinsMixin:
+    def __add__(self, other):
+        return self._wrapped + other # Assume a _wrapped
+    def __str__(self): # Bypass __getattr__
+        return str(self._wrapped)
+    def __getitem__(self, index):
+        return self._wrapped[index]
+    def __call__(self, *args, **kargs):
+        return self._wrapped(*args, **kargs)
+    # plus any others needed
+
+def accessControl(failIf):
+    def onDecorator(aClass):
+        class onInstance(BuiltinsMixin):
+            #...and use self._wrapped instead of self.__wrapped...
+            def __getattr__(self, attr): ...
+            def __setattr__(self, attr, value): ...
+```
+
+
+
+###### Coding variations: Routers, descriptors, automation.
 
 
 
 
 
+##### Should operator methods be validated?
 
 
+
+##### 实现替代：`__getattribute__`插入，调用堆栈检查 (Implementation alternatives: `__getattribute__` inserts, call stack inspection)
+
+如下是对类装饰器代码的潜在修改：
+
+```python
+# Method insertion: rest of access2.py code as before
+def accessControl(failIf):
+    def onDecorator(aClass):
+        def getattributes(self, attr):
+            trace('get:', attr)
+            if failIf(attr):
+                raise TypeError('private attribute fetch: ' + attr)
+            else:
+                return object.__getattribute__(self, attr)
+            
+        def setattributes(self, attr, value):
+            trace('set:', attr)
+            if failIf(attr):
+                raise TypeError('private attribute change: ' + attr)
+            else:
+                return object.__setattr__(self, attr, value)
+            
+        aClass.__getattribute__ = getattributes
+        aClass.__setattr__ = setattributes # Insert accessors
+        return aClass # Return original class
+    return onDecorator
+```
+
+
+
+
+
+#### Python 不是关于控制
+
+既然我已经用如此大的篇幅添加了对Python代码的`Private`和`Public`属性声明，必须再次提醒你，像这样为类添加访问控制一点都Pythonic。实际上，大多数Python程序员可能发现这一示例太大或者完全无关，除非仅充当装饰器实践的一个演示 (demonstration)。大多数大型的Python程序根本没有任何这样的控制而获得成功。如果你确实想要控制属性访问以杜绝编码错误，或者恰好近乎是专家级的C++或Java程序员，那么使用Python的运算符重载和内省工具，大多数事情是可以完成的。
 
 
 
