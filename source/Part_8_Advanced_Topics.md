@@ -4478,6 +4478,8 @@ def accessControl(failIf):
 
 ###### Coding variations: Routers, descriptors, automation.
 
+Naturally, both of the prior section’s mixin superclasses might be improved with additional code changes we’ll largely pass on here, except for two variations worth noting briefly. First, compare the following mutation of the first mix-in—which uses a simpler coding structure but will incur an extra call per built-in operation, making it slower (though perhaps not significantly so in a proxy context):
+
 ```python
 class BuiltinsMixin:
     def reroute(self, attr, *args, **kargs):
@@ -4494,13 +4496,29 @@ class BuiltinsMixin:
 
 ```
 
+Naturally, both of the prior section’s mixin superclasses might be improved with additional code changes we’ll largely pass on here, except for two variations worth noting briefly. First, compare the following mutation of the first mix-in—which uses a simpler coding structure but will incur an extra call per built-in operation, making it slower (though perhaps not significantly so in aproxy context):
+
+```python
+class BuiltinsMixin:
+    class ProxyDesc(object): # object for 2.X
+        def __init__(self, attrname):
+            self.attrname = attrname
+        def __get__(self, instance, owner):
+            return getattr(instance._wrapped, self.attrname) # Assume a _wrapped
+        
+    builtins = ['add', 'str', 'getitem', 'call'] # Plus any others
+
+    for attr in builtins:
+        exec('__%s__ = ProxyDesc("__%s__")' % (attr, attr))
+```
+
 
 
 ##### Should operator methods be validated?
 
 Adding support for operator overloading methods is required of interface proxies in general, to delegate calls correctly. In our specific privacy application, though, it also raises some additional design choices. In particular, privacy of operator overloading methods differs per implementation:
 
-- Because they invoke `__getattr__`, the rerouter mix-ins require either that all `__X__` names accessed be listed in Public decorations, or that Private be used instead when operator overloading is present in clients. In classes that use overloading heavily, Public may be impractical.Because they bypass `__getattr__` entirely, as coded here both the inline scheme and `self._wrapped` mix-ins do not have these constraints, but they preclude builtin operations from being made private, and cause built-in operation dispatch to work asymmetrically from both explicit `__X__` calls by-name and 2.X’s default classic classes.
+- Because they invoke `__getattr__`, the rerouter mix-ins require either that all `__X__` names accessed be listed in Public decorations, or that Private be used instead when operator overloading is present in clients. In classes that use overloading heavily, Public may be impractical.
 - Because they bypass `__getattr__` entirely, as coded here both the inline scheme and `self._wrapped` mix-ins do not have these constraints, but they preclude builtin operations from being made private, and cause built-in operation dispatch towork asymmetrically from both explicit `__X__` calls by-name and 2.X’s default classic classes.
 - Python 2.X classic classes have the first bullet’s constraints, simply because all`__X__` names are routed through `__getattr__` automatically.
 - Operator overloading names and protocols differ between 2.X and 3.X, makingtruly cross-version decoration less than trivial (e.g., Public decorators may need tolist names from both lines).
@@ -4543,7 +4561,7 @@ def accessControl(failIf):
 
 #### Python 不是关于控制
 
-既然我已经用如此大的篇幅添加了对Python代码的`Private`和`Public`属性声明，必须再次提醒你，像这样为类添加访问控制一点都Pythonic。实际上，大多数Python程序员可能发现这一示例太大或者完全无关，除非仅充当装饰器实践的一个演示 (demonstration)。大多数大型的Python程序根本没有任何这样的控制而获得成功。如果你确实想要控制属性访问以杜绝编码错误，或者恰好近乎是专家级的C++或Java程序员，那么使用Python的运算符重载和内省工具，大多数事情是可以完成的。
+既然我已经用如此大的篇幅添加了对Python代码的`Private`和`Public`属性声明，必须再次提醒你，像这样为类添加访问控制一点都不Pythonic。实际上，大多数Python程序员可能发现这一示例太大或者完全无关，除非仅充当装饰器实践的一个演示 (demonstration)。大多数大型的Python程序根本没有任何这样的控制而获得成功。如果你确实想要控制属性访问以杜绝编码错误，或者恰好近乎是专家级的C++或Java程序员，那么使用Python的运算符重载和内省工具，大多数事情是可以完成的。
 
 
 
