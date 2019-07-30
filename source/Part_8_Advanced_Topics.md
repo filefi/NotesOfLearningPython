@@ -5005,7 +5005,7 @@ def func(a: int, b, c: float, d): # func = typetest(func)
 
 
 
-## 第40章 元类
+## 第40章 元类 (Metaclasses)
 
 
 
