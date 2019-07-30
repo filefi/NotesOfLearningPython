@@ -4567,21 +4567,303 @@ def accessControl(failIf):
 
 ### 39.7 实例：验证函数参数
 
+作为装饰器工具的最后一个示例，本节开发了一个函数装饰器，它自动地测试传递给一个函数或方法的参数是否在有效的数值范围内。它设计用来在任何开发或产品阶段使用，并且它可以用作类似任务的一个模板（例如，参数类型测试，如果必须这么做的话）。
+
 #### 目标
 
+针对我们现在或将来要编写的任何函数或方法的参数，开发一个通用的工具来自动为我们执行范围测试。装饰器方法使得这明确而方便：
 
+```python
+class Person:
+    @rangetest(percent=(0.0, 1.0)) # Use decorator to validate
+    def giveRaise(self, percent):
+        self.pay = int(self.pay * (1 + percent))
+```
+
+在装饰器中隔离验证逻辑，这简化了客户类和未来的维护。
+
+注意，我们这里的目标和前面编写的 **属性验证** 不同。这里，我们想要验证传入的 **函数参数的值** ，而不是设置的属性的值。Python的装饰器和内省工具允许我们很容易地编写这一新的任务。
 
 #### 针对位置参数的一个基本范围测试装饰器
+
+为了简化，我们将从编写一个只对位置参数有效的装饰器开始，并且假设它们在每次调用中总是出现在相同的位置。
+
+在名为`rangetest1.py`的文件中编写如下代码：
+
+```python
+# rangetest1.py
+
+def rangetest(*argchecks):        # Validate positional arg ranges
+    def onDecorator(func):
+        if not __debug__:         # True if "python -O main.py args..."
+            return func           # No-op: call original directly
+        else:                     # Else wrapper while debugging
+            def onCall(*args):
+                for (ix, low, high) in argchecks:
+                    if args[ix] < low or args[ix] > high:
+                        errmsg = 'Argument %s not in %s..%s' % (ix, low, high)
+                        raise TypeError(errmsg)
+                return func(*args)
+            return onCall
+    return onDecorator
+```
+
+这段代码我们使用装饰器参数，嵌套作用域以进行状态保持，等等。我们还使用了嵌套的`def`语句以确保这对简单函数和方法都有效。
+
+还要注意到，这段代码使用了`__debug__`内置变量——Python将其设置为`True`，除非它将以`-O`优化命令行标志运行（例如，`python -O main.py`）。当`__debug__`为`False`的时候，装饰器返回未修改的最初函数，以避免额外调用及其相关的性能损失。
+
+```python
+# File rangetest1_test.py
+
+from __future__ import print_function # 2.X
+from rangetest1 import rangetest
+print(__debug__) # False if "python -O main.py"
+
+@rangetest((1, 0, 120)) # persinfo = rangetest(...)(persinfo)
+def persinfo(name, age): # age must be in 0..120
+    print('%s is %s years old' % (name, age))
+
+@rangetest([0, 1, 12], [1, 1, 31], [2, 0, 2009])
+def birthday(M, D, Y):
+    print('birthday = {0}/{1}/{2}'.format(M, D, Y))
+
+class Person:
+    def __init__(self, name, job, pay):
+        self.job = job
+        self.pay = pay
+
+    @rangetest([1, 0.0, 1.0]) # giveRaise = rangetest(...)(giveRaise)
+    def giveRaise(self, percent): # Arg 0 is the self instance here
+        self.pay = int(self.pay * (1 + percent))
+
+# Comment lines raise TypeError unless "python -O" used on shell command line
+persinfo('Bob Smith', 45)                     # Really runs onCall(...) with state
+#persinfo('Bob Smith', 200)                   # Or person if -O cmd line argument
+
+birthday(5, 31, 1963)
+#birthday(5, 32, 1963)
+
+sue = Person('Sue Jones', 'dev', 100000)
+sue.giveRaise(.10)                            # Really runs onCall(self, .10)
+print(sue.pay)                                # Or giveRaise(self, .10) if -O
+#sue.giveRaise(1.10)
+#print(sue.pay)
+```
+
+运行的时候，这段代码中的有效调用产生如下的输出：
+
+```
+C:\code> python rangetest1_test.py
+True
+Bob Smith is 45 years old
+birthday = 5/31/1963
+110000
+```
+
+取消任何无效调用的注释会导致`TypeError`被装饰器引发。以下是最后两行代码被允许执行时的输出：
+
+```
+C:\code> python rangetest1_test.py
+True
+Bob Smith is 45 years old
+birthday = 5/31/1963
+110000
+TypeError: Argument 1 not in 0.0..1.0
+```
+
+在系统命令行，使用`-O`标志来运行Python，将会关闭范围测试，也会避免包装层的性能负担，最终直接调用最初未装饰的函数。假设这只是一个调试工具，可以使用这个标志来优化程序以供产品阶段使用：
+
+```
+C:\code> python -O rangetest1_test.py
+False
+Bob Smith is 45 years old
+birthday = 5/31/1963
+110000
+231000
+```
 
 
 
 #### 针对关键字和默认泛化
 
+通过把包装函数的期待参数与调用时实际传入的参数匹配，它支持对按照位置或关键字名称传入的参数的验证，并且对于调用忽略的默认参数，它会跳过测试。
+
+```python
+"""
+File rangetest.py: function decorator that performs range-test
+validation for arguments passed to any function or method.
+
+Arguments are specified by keyword to the decorator. In the actual
+call, arguments may be passed by position or keyword, and defaults
+may be omitted. See rangetest_test.py for example use cases.
+"""
+trace = True
+
+def rangetest(**argchecks):       # Validate ranges for both+defaults
+    def onDecorator(func):        # onCall remembers func and argchecks
+        if not __debug__:         # True if "python -O main.py args..."
+            return func           # Wrap if debugging; else use original
+        else:
+            code = func.__code__
+            allargs = code.co_varnames[:code.co_argcount]
+            funcname = func.__name__
+            
+            def onCall(*pargs, **kargs):
+                # All pargs match first N expected args by position
+                # The rest must be in kargs or be omitted defaults
+                expected = list(allargs)
+                positionals = expected[:len(pargs)]
+                for (argname, (low, high)) in argchecks.items():
+                    # For all args to be checked
+                    if argname in kargs:
+                        # Was passed by name
+                        if kargs[argname] < low or kargs[argname] > high:
+                            errmsg = '{0} argument "{1}" not in {2}..{3}'
+                            errmsg = errmsg.format(funcname, argname, low, high)
+                            raise TypeError(errmsg)
+                    elif argname in positionals:
+                        # Was passed by position
+                        position = positionals.index(argname)
+                        if pargs[position] < low or pargs[position] > high:
+                            errmsg = '{0} argument "{1}" not in {2}..{3}'
+                            errmsg = errmsg.format(funcname, argname, low, high)
+                            raise TypeError(errmsg)
+                    else:
+                        # Assume not passed: default
+                        if trace:
+                            print('Argument "{0}" defaulted'.format(argname))
+                return func(*pargs, **kargs) # OK: run original call
+            return onCall
+    return onDecorator
+```
+
+如下的测试脚本展示了如何使用装饰器：
+
+```python
+"""
+File rangetest_test.py (3.X + 2.X)
+Comment lines raise TypeError unless "python -O" used on shell command line
+"""
+from __future__ import print_function # 2.X
+from rangetest import rangetest
+
+# Test functions, positional and keyword
+
+@rangetest(age=(0, 120)) # persinfo = rangetest(...)(persinfo)
+def persinfo(name, age):
+    print('%s is %s years old' % (name, age))
+@rangetest(M=(1, 12), D=(1, 31), Y=(0, 2013))
+def birthday(M, D, Y):
+    print('birthday = {0}/{1}/{2}'.format(M, D, Y))
+
+persinfo('Bob', 40)
+persinfo(age=40, name='Bob')
+birthday(5, D=1, Y=1963)
+#persinfo('Bob', 150)
+#persinfo(age=150, name='Bob')
+#birthday(5, D=40, Y=1963)
+
+# Test methods, positional and keyword
+
+class Person:
+    def __init__(self, name, job, pay):
+        self.job = job
+        self.pay = pay
+    # giveRaise = rangetest(...)(giveRaise)
+    @rangetest(percent=(0.0, 1.0)) # percent passed by name or position
+    def giveRaise(self, percent):
+        self.pay = int(self.pay * (1 + percent))
+
+bob = Person('Bob Smith', 'dev', 100000)
+sue = Person('Sue Jones', 'dev', 100000)
+bob.giveRaise(.10)
+sue.giveRaise(percent=.20)
+print(bob.pay, sue.pay)
+#bob.giveRaise(1.10)
+#bob.giveRaise(percent=1.20)
+
+# Test omitted defaults: skipped
+
+@rangetest(a=(1, 10), b=(1, 10), c=(1, 10), d=(1, 10))
+def omitargs(a, b=7, c=8, d=9):
+    print(a, b, c, d)
+
+omitargs(1, 2, 3, 4)
+omitargs(1, 2, 3)
+omitargs(1, 2, 3, d=4)
+omitargs(1, d=4)
+omitargs(d=4, a=1)
+omitargs(1, b=2, d=4)
+omitargs(d=8, c=7, a=1)
+#omitargs(1, 2, 3, 11) # Bad d
+#omitargs(1, 2, 11) # Bad c
+#omitargs(1, 2, 3, d=11) # Bad d
+#omitargs(11, d=4) # Bad a
+#omitargs(d=4, a=11) # Bad a
+#omitargs(1, b=11, d=4) # Bad b
+#omitargs(d=8, c=7, a=11) # Bad a
+```
+
+这段脚本运行的时候，超出范围的参数会像前面一样引发异常，但参数可以按照名称或位置传递，并且忽略的默认参数不会验证：
+
+```
+C:\code> python rangetest_test.py
+Bob is 40 years old
+Bob is 40 years old
+birthday = 5/1/1963
+110000 120000
+1 2 3 4
+Argument "d" defaulted
+1 2 3 9
+1 2 3 4
+Argument "c" defaulted
+Argument "b" defaulted
+1 7 8 4
+Argument "c" defaulted
+Argument "b" defaulted
+1 7 8 4
+Argument "c" defaulted
+1 2 8 4
+Argument "b" defaulted
+1 7 7 8
+```
+
+对于验证错误，当方法测试行之一注释掉的时候，我们像前面一样得到一个异常（除非`-0`命令行参数传递给Python）：
+
+```
+TypeError: giveRaise argument "percent" not in 0.0..1.0
+```
+
 
 
 #### 实现细节
 
+##### 函数内省 (Function introspection)
+
+已经证实了内省API可以在函数对象以及其拥有我们所需的工具的相关代码对象上实现。期待的参数名集合只是附加给一个函数的代码对象的前`N`个变量名：
+
+```python
+# In Python 3.X (and 2.6+ for compatibility)
+>>> def func(a, b, c, e=True, f=None): # Args: three required, two defaults
+x = 1 # Plus two more local variables
+y = 2
+>>> code = func.__code__ # Code object of function object
+>>> code.co_nlocals
+7
+>>> code.co_varnames # All local variable names
+('a', 'b', 'c', 'e', 'f', 'x', 'y')
+>>> code.co_varnames[:code.co_argcount] # <== First N locals are expected args
+('a', 'b', 'c', 'e', 'f')
+```
+
+
+
 ##### 参数假设
+
+给定期待的参数名的这个集合，该解决方案依赖于Python对于参数传递顺序所施加的两条限制（在Python 2.X和Python 3.X中都仍然成立）：
+
+- 在调用时，所有的位置参数出现在所有关键字参数之前。
+- 在`def`中，所有的非默认参数出现在所有的默认参数之前。
 
 ##### 匹配算法
 
@@ -4600,6 +4882,70 @@ def accessControl(failIf):
 
 #### 装饰器参数 VS 函数注解
 
+Python 3.X中提供的函数注解功能，可能为我们在指定范围测试的示例中所使用的装饰器参数给出了一种替代方法。正如我们在第19章中学到的，注解允许我们把表达式和参数及返回值关联起来，通过在自己的def头部行中编写它们。Python把注解收集到字典中并且将其附加给注解的函数。
+
+我们可以在示例中的标题行编写范围限制，而不是在装饰器参数中编写。我们将仍然需要一个函数装饰器来包装函数以拦截随后的调用，但我们基本上换掉了装饰器参数语法：
+
+```python
+@rangetest(a=(1, 5), c=(0.0, 1.0))
+def func(a, b, c): # func = rangetest(...)(func)
+    print(a + b + c)
+```
+
+注解语法如下：
+
+```python
+@rangetest
+def func(a:(1, 5), b, c:(0.0, 1.0)):
+    print(a + b + c)
+```
+
+装饰器参数编码模式就是我们前面给出的完整解决方案，注解替代方案需要一个较少层级的嵌套，因为它不需要保持装饰器参数：
+
+```python
+# Using decorator arguments (3.X + 2.X)
+def rangetest(**argchecks):             # 装饰器参数版本的信息保持在封闭作用域的一个参数中
+    def onDecorator(func):
+        def onCall(*pargs, **kargs):
+            print(argchecks)
+            for check in argchecks:
+                pass # Add validation code here
+            return func(*pargs, **kargs)
+        return onCall
+    return onDecorator
+
+@rangetest(a=(1, 5), c=(0.0, 1.0))
+def func(a, b, c): # func = rangetest(...)(func)
+    print(a + b + c)
+func(1, 2, c=3) # Runs onCall, argchecks in scope
+
+
+# Using function annotations (3.X only)
+def rangetest(func):
+    def onCall(*pargs, **kargs):
+        argchecks = func.__annotations__    # 注解版本的信息保持在函数自身的一个属性中
+        print(argchecks)
+        for check in argchecks:
+            pass # Add validation code here
+        return func(*pargs, **kargs)
+    return onCall
+
+@rangetest
+def func(a:(1, 5), b, c:(0.0, 1.0)): # func = rangetest(func)
+    print(a + b + c)
+
+func(1, 2, c=3)
+```
+
+运行的时候，两种方案都会访问同样的验证测试信息，但以不同的形式——装饰器参数版本的信息保持在封闭作用域的一个参数中；注解版本的信息保持在函数自身的一个属性中：
+
+```
+C:\code> py −3 decoargs-vs-annotation.py
+{'a': (1, 5), 'c': (0.0, 1.0)}
+6
+{'a': (1, 5), 'c': (0.0, 1.0)}
+6
+```
 
 
 
@@ -4607,7 +4953,47 @@ def accessControl(failIf):
 
 #### 其他应用程序：类型测试
 
+在处理装饰器参数时，我们所使用的编码模式可以应用于其他环境。例如，在开发时检查参数数据类型，这是一种直接的扩展：
 
+```python
+def typetest(**argchecks):
+    def onDecorator(func):
+        ...
+        def onCall(*pargs, **kargs):
+            positionals = list(allargs)[:len(pargs)]
+            for (argname, type) in argchecks.items():
+                if argname in kargs:
+                    if not isinstance(kargs[argname], type):
+                        ...
+                        raise TypeError(errmsg)
+                elif argname in positionals:
+                    position = positionals.index(argname)
+                    if not isinstance(pargs[position], type):
+                        ...
+                        raise TypeError(errmsg)
+                else:
+                    # Assume not passed: default
+            return func(*pargs, **kargs)
+        return onCall
+    return onDecorator
+
+@typetest(a=int, c=float)
+def func(a, b, c, d): # func = typetest(...)(func)
+    ...
+    
+func(1, 2, 3.0, 4) # OK
+func('spam', 2, 99, 4) # Triggers exception correctly
+```
+
+正如前面的小节所述，对于这样的一个装饰器使用函数注解而不是装饰器参数，将会使其看起来更像是其他语言中的类型声明：
+
+```python
+@typetest
+def func(a: int, b, c: float, d): # func = typetest(func)
+    ... # Gasp!...
+```
+
+这一特定角色通常是工作代码中的一个糟糕思路，并且一点都不 *Pythonic*（实际上，它往往是有经验的C++程序员初次尝试使用Python的一种现象）。
 
 
 
