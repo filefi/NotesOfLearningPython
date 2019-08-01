@@ -1,4 +1,4 @@
-# 第8部分 高级话题
+第8部分 高级话题
 
 ## 第37章 Unicode和字节字符串
 
@@ -5007,8 +5007,133 @@ def func(a: int, b, c: float, d): # func = typetest(func)
 
 ## 第40章 元类 (Metaclasses)
 
-### 40.1 要么是元类，要么不是元类
+函数装饰器和类装饰器允许我们拦截并扩展函数调用以及类实例创建调用。以类似的思路，元类允许我们拦截并扩展类创建——它们提供了一个API以插入在一条`class`语句结束时运行的额外逻辑，尽管是以与装饰器不同的方式。同样，它们提供了一种通用的协议来管理程序中的类对象。
 
+另一方面，元类为各种没有它而难以实现或不可能实现的编码模式打开了大门，并且对于那些追求编写灵活的API或编程工具供其他人使用的程序员来说，它特别有用。
+
+
+
+### 40.1 如果你不知道为什么要使用元类，那就不要使用它
+
+> 如果你犹豫是否需要元类，那你不需要它们（真正需要元类的人，能够确定地知道需要它们，并且不需要说明为什么需要）。
+
+换句话说，元类主要是针对那些构建API和工具供他人使用的程序员。在很多情况下（如果不是大多数的话），它们可能不是应用程序工作的最佳选择。
+
+然而，元类有着各种各样广泛的潜在角色，并且知道它们何时有用是很重要的。例如，它们可能用来扩展具有跟踪、对象持久、异常日志等功能的类。它们也可以用来在运行时根据配置文件来构建类的一部分，对一个类的每个方法广泛地应用函数装饰器，验证其他的接口的一致性，等等。元类甚至可以用来实现替代的编程模式，例如面向方面编程 (aspect-oriented programming)、数据库的对象/关系映射（ORM），等等。
+
+#### 提高魔力层次
+
+- **内省属性：** 像`__class__`和`__dict__`这样的特殊属性允许我们查看Python对象的内部实现方面，以便更广泛地处理它们，列出对象的所有属性、显示一个类名，等等。
+- **运算符重载方法：** 像`__str__`和`__add__`这样特殊命名的方法，在类中编写来拦截并提供应用于类实例的内置操作的行为，例如，打印、表达式运算符等等。它们自动运行作为对内置操作的响应，并且允许类符合期望的接口。
+- **属性拦截方法：** 一类特殊的运算符重载方法提供了一种方法在实例上广泛地拦截属性访问：`__getattr__`、`__setattr__`和`__getattribute__`允许包装的类插入自动运行的代码，这些代码可以验证属性请求并且将它们委托给嵌入的对象。它们允许一个对象的任意数目的属性——要么是选取的属性，要么是所有的属性——在访问的时候计算。
+- **类特性：** 内置函数`property`允许我们把代码和特殊的类属性关联起来，当获取、赋值或删除该属性的时候就自动运行代码。尽管不像前面一段所介绍的工具那样通用，特性考虑到了访问特定属性时候的自动代码调用。
+- **类属性描述符：** 其实，特性只是定义根据访问自动运行函数的属性描述符的一种简洁方式。描述符允许我们在单独的类中编写`__get__`、`__set__`和`__delete__`处理程序方法，当分配给该类的一个实例的属性被访问的时候自动运行它们。它们提供了一种通用的方式，来插入当访问一个特定的属性时自动运行的代码，并且在一个属性的常规查找之后触发它们。
+- **函数和类装饰器：** 装饰器的特殊的`@`可调用语法，允许我们添加当调用一个函数或创建一个类实例的时候自动运行的逻辑。这个包装器逻辑可以跟踪或计时调用，验证参数，管理类的所有实例，用诸如属性获取验证的额外行为来扩展实例，等等。装饰器语法插入名称重新绑定逻辑，在函数或类定义语句的末尾自动运行该逻辑——装饰的函数和类名重新绑定到拦截了随后调用的可调用对象。
+- **元类：** 元类是这些技术的延续——它们允许我们在一条`class`语句的末尾，插入当创建一个类对象的时候自动运行的逻辑。这个逻辑不会把类名重新绑定到一个装饰器可调用对象，而是把类自身的创建指向特定的逻辑。
+
+
+
+##### 语言的钩子
+
+换句话说，元类最终只是定义自动运行代码的另外一种方式。通过元类以及前面列出的其他工具，Python为我们提供了在各种环境中插入逻辑的方法——在运算符计算时、属性访问时、函数调用时、类实例创建时，现在是在类对象创建时。It’s a language with hooks galore—a feature open to abuse like any other, but one that also offers the flexibility that some programmers desire, and that some programs may require.
+
+正如我们已经看到的，这些高级Python工具中的很多都有交叉的角色。例如，属性往往可以用特性、描述符或属性拦截方法来管理。正如我们在本章中见到的，类装饰器和元类往往可以交换使用：
+
+- 尽管类装饰器常常用来管理实例，它们也可以用来管理类；
+- 类似的，尽管元类设计用来扩展类构建，它们也常常插入代码来管理实例。
+
+In fact, the main functional difference between these two tools is simply their place in the timing of class creation. As we saw in the prior chapter, class decorators run after the decorated class has already been created. Thus, they are often used to add logic to be run at instance creation time. When they do provide behavior for a class, it is typically through changes or proxies, instead of a more direct relationship.
+
+As we’ll see here, metaclasses, by contrast, run during class creation to make and return the new client class. Therefore, they are often used for managing or augmenting classes themselves, and can even provide methods to process the classes that are created from them, via a direct instance relationship.
+
+For example, metaclasses can be used to add decoration to all methods of classes automatically, register all classes in use to an API, add user-interface logic to classes automatically, create or extend classes from simplified specifications in text files, and so on. Because they can control how classes are made—and by proxy the behavior their instances acquire—metaclass applicability is potentially very wide.
+
+As we’ll also see here, though, these two tools are more similar than different in many common roles. Since tool choices are sometimes partly subjective, knowledge of the alternatives can help you pick the right tool for a given task. To understand the options better, let’s see how metaclasses stack up.
+
+
+
+#### 管理器函数的缺点
+
+就像装饰器一样，元类常常是可选的。我们通常可以通过管理器函数 (manager functions) 传递类对象来实现同样的效果，这和我们通过管理器代码传递函数和实例来实现装饰器的目的很相似。然而，就像装饰器一样，元类：
+
+- 提供一种更为正式和明确的结构。
+- 有助于确保应用程序员不会忘记根据一个API需求来扩展他们的类。
+- 通过把类定制逻辑工厂化到一个单独的位置（元类）中，避免代码冗余及其相关的维护成本。
+
+从维护的角度，把选择逻辑隔离到一个单独的地方，这可能会更好。我们可以通过把类指向一个管理器函数，从而把一些这些额外工作的一部分封装起来——这样的一个管理器函数将根据需求扩展类，并且处理运行时测试和配置的所有工作：
+
+```python
+def extra(self, arg): ...
+    
+def extras(Class): # Manager function: too manual
+    if required():
+        Class.extra = extra
+
+class Client1: ...
+extras(Client1)
+
+class Client2: ...
+extras(Client2)
+
+class Client3: ...
+extras(Client3)
+
+X = Client1()
+X.extra()
+```
+
+这段代码通过紧随类创建之后一个管理器函数来运行类。尽管像这样的一个管理器函数在这里可以实现我们的目标，但它们仍然给类的编写者增加了相当重的负担，所以编写者必须理解需求并且将它们附加到代码中。
+
+**元类** 提供一种简单的方式在主体类中增强这种扩展。只需要在客户类中声明一个元类，在创建新类的时候，Python在`class`语句的末尾自动调用元类，客户类将自动获取元类所提供的扩展。因此，使用元类可以根据需要扩展、注册或管理类。
+
+```python
+def extra(self, arg): ...
+    
+class Extras(type):
+    def __init__(Class, classname, superclasses, attributedict):
+        if required():
+            Class.extra = extra
+
+class Client1(metaclass=Extras): ... # Metaclass declaration only (3.X form)
+class Client2(metaclass=Extras): ... # Client class is instance of meta
+class Client3(metaclass=Extras): ...
+
+X = Client1() # X is instance of Client1
+X.extra()
+```
+
+
+
+#### 元类VS类装饰器：第1回合
+
+类装饰器有时候在功能上与元类有重合。尽管类装饰器通常用来管理或扩展实例，但它们也可以扩展类，而独立于任何创建的实例。由于类装饰器通过自动把一个类名绑定到一个函数的结果，那么，没有理由在任何实例创建之前不能用它来扩展类。也就是说，在创建的时候，类装饰器可以对类应用额外的逻辑，而不只是对实例应用：
+
+```python
+def extra(self, arg): ...
+    
+def extras(Class):
+    if required():
+        Class.extra = extra
+    return Class
+
+@extras
+class Client1: ... # Client1 = extras(Client1)
+
+@extras
+class Client2: ... # Rebinds class independent of instances
+
+@extras
+class Client3: ...
+
+X = Client1() # Makes instance of augmented class
+X.extra() # X is instance of original Client1
+```
+
+这里，装饰器基本上会把前面示例的手动名称重新绑定自动化。就像是使用元类，由于装饰器返回最初的类，实例由此创建，而不是由包装器对象创建。实际上，根本没有拦截实例创建。
+
+由于类装饰器和元类都可以管理类，所以在这个特定例子中，装饰器对应到元类的`__init__`方法，但是，元类还有其他的定制钩子。
+
+**尽管装饰器可以管理实例和类，但元类是设计来管理类的，用元类来管理实例则不是很容易。**
 
 
 
