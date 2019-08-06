@@ -5140,6 +5140,64 @@ X.extra() # X is instance of original Client1
 
 ### 40.2 元类模型
 
+#### 类是`type`的实例
+
+- 在Python 3.X 中，用户定义的类对象是名为`type`的对象的实例，`type`本身是一个类。
+- 在Python 2.X 中，新式类继承自`object`，它是`type`的一个子类；传统类是`type`的一个实例，并且并不创建自一个类。
+
+```python
+C:\code> py −3 # In 3.X:
+>>> type([]), type(type([])) # List instance is created from list class
+(<class 'list'>, <class 'type'>) # List class is created from type class
+>>> type(list), type(type) # Same, but with type names
+(<class 'type'>, <class 'type'>) # Type of type is type: top of hierarchy
+```
+
+Python 3.X中，“类型”的概念与“类”的概念合并了，类就是类型，类型也是类。即：
+
+- 类对象（类型）由派生自`type`的类定义。
+- 类对象是`type`类的实例。
+- 一个实例对象的类型是产生它类。
+
+实际上，类现在有了连接到`type`的一个`__class__`，就像是一个实例有了链接到创建它的类的`__class__`：
+
+```python
+C:\code> py −3
+>>> class C: pass # 3.X class object (new-style)
+>>> X = C() # Class instance object
+>>> type(X) # Instance is instance of class
+<class '__main__.C'>
+>>> X.__class__ # Instance's class
+<class '__main__.C'>
+>>> type(C) # Class is instance of type
+<class 'type'>
+>>> C.__class__ # Class's class is type
+<class 'type'>
+```
+
+
+
+#### 元类是`type`的子类
+
+由于类实际上是`type`类的实例，从`type`的定制的子类创建类允许我们实现各种定制的类。在Python 3.X和Python 2.6以上版本的新式类中：
+
+- `type`是产生用户定义类对象的一个类。
+- 元类是`type`类的一个子类。
+- 类对象是`type`类的一个实例或一个子类。
+- 实例对象产生自一个类。
+
+换句话说，为了控制创建类以及扩展其行为的方式，我们所需要做的只是指定一个用户定义的类创建自一个用户定义的元类，而不是常规的`type`类。
+
+#### class语句协议
+
+从技术上讲，Python遵从一个标准的协议来处理`class`语句：在一条`class`语句的末尾，并且在运行了一个命名控件词典中的所有嵌套代码之后，它调用type对象来创建`class`对象：
+
+```python
+class = type(classname, superclasses, attributedict)
+```
+
+
+
 
 
 
