@@ -5190,15 +5190,59 @@ C:\code> py −3
 
 #### class语句协议
 
-从技术上讲，Python遵从一个标准的协议来处理`class`语句：在一条`class`语句的末尾，并且在运行了一个命名控件词典中的所有嵌套代码之后，它调用type对象来创建`class`对象：
+从技术上讲，Python遵从一个标准的协议来处理`class`语句：在一条`class`语句的末尾，并在运行了一个命名空间词典中的所有嵌套代码之后，它调用`type`对象来创建`class`对象：
 
 ```python
 class = type(classname, superclasses, attributedict)
 ```
 
+`type`对象定义了一个`__call__`运算符重载方法，当调用`type`对象的时候，该方法运行两个其他的方法：
 
+```python
+type.__new__(typeclass, classname, superclasses, attributedict)
+type.__init__(class, classname, superclasses, attributedict)
+```
 
+`__new__`方法创建并返回了新的`class`对象，并且随后`__init__`方法初始化了新创建的对象。这是`type`的元类子类通常用来定制类的钩子。
 
+例如，给定一个如下所示的类定义：
+
+```python
+class Eggs: ... # Inherited names here
+    
+class Spam(Eggs): # Inherits from Eggs
+    data = 1 # Class data attribute
+    def meth(self, arg): # Class method attribute
+        return self.data + arg
+```
+
+Python将会从内部运行嵌套的代码块来创建该类的两个属性（`data`和`meth`），然后在`class`语句的末尾调用`type`对象，产生`class`对象：
+
+```python
+Spam = type('Spam', (Eggs,), {'data': 1, 'meth': meth, '__module__': '__main__'})
+```
+
+实际上，你可以用这种方式调用`type`来动态地创建类对象。例如，在Python 3.X和2.X中，尽管这里有一个虚构的方法函数和空的超类元组，Python都会自动创建对象：
+
+```python
+>>> x = type('Spam', (), {'data': 1, 'meth': (lambda x, y: x.data + y)})
+>>> i = x()
+>>> x, i
+(<class '__main__.Spam'>, <__main__.Spam object at 0x029E7780>)
+>>> i.data, i.meth(2)
+(1, 3)
+```
+
+这个产生的类与运行一个`class`语句得到的类是完全一样的：
+
+```python
+>>> x.__bases__
+(<class 'object'>,)
+>>> [(a, v) for (a, v) in x.__dict__.items() if not a.startswith('__')]
+[('data', 1), ('meth', <function <lambda> at 0x0297A158>)]
+```
+
+因为这个`type`调用是在`class`语句末尾自动被执行的，所以它是扩展类或以其他方式处理类的理想钩子。诀窍在于用一个自定义子类替换默认`type`，这个子类将拦截这个调用。
 
 
 
