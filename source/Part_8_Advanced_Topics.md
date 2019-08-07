@@ -1,4 +1,4 @@
-第8部分 高级话题
+# 第8部分 高级话题
 
 ## 第37章 Unicode和字节字符串
 
@@ -5258,7 +5258,7 @@ Spam = type('Spam', (Eggs,), {'data': 1, 'meth': meth, '__module__': '__main__'}
 class Spam(metaclass=Meta): # 3.X version (only)
 ```
 
-继承的超类也可以列在类头部中，例如，下面的新类`Spam`继承自`Eggs`，但同时也是元类`Meta`的实例：
+继承的超类也可以列在类头部中，例如，下面的新类`Spam`继承自`Eggs`，但同时也是元类`Meta`的实例并且由`Meta`创建：
 
 ```python
 class Spam(Eggs, metaclass=Meta): # Normal supers OK: must list first
@@ -5451,7 +5451,10 @@ data: 1 3
 
 ##### 使用普通类来重载类创建调用
 
+因为普通类实例可以通过运算符重载来响应调用操作，所以普通类实例也可以充当元类的角色：
+
 ```python
+# metaclass4.py
 # A normal class instance can serve as a metaclass too
 class MetaObj:
     def __call__(self, classname, supers, classdict):
@@ -5480,17 +5483,180 @@ X = Spam()
 print('data:', X.data, X.meth(2))
 ```
 
+当运行时，这三个方法通过普通实例的`__call__`方法被调度：
+
+```python
+c:\code> py −3 metaclass4.py
+making class
+In MetaObj.call:
+...Spam
+...(<class '__main__.Eggs'>,)
+...{'data': 1, 'meth': <function Spam.meth at 0x029492F0>, '__module__': '__main__'}
+In MetaObj.new:
+...Spam
+...(<class '__main__.Eggs'>,)
+...{'data': 1, 'meth': <function Spam.meth at 0x029492F0>, '__module__': '__main__'}
+In MetaObj.init:
+...Spam
+...(<class '__main__.Eggs'>,)
+...{'data': 1, 'meth': <function Spam.meth at 0x029492F0>, '__module__': '__main__'}
+...init class object: ['__module__', '__doc__', 'data', '__qualname__', 'meth']
+making instance
+data: 1 3
+```
+
+实际上，我们可以使用普通超类继承来获得调用拦截器：
+
+```python
+# metaclass4-super.py
+# Instances inherit from classes and their supers normally
+class SuperMetaObj:
+    def __call__(self, classname, supers, classdict):
+        print('In SuperMetaObj.call: ', classname, supers, classdict, sep='\n...')
+        Class = self.__New__(classname, supers, classdict)
+        self.__Init__(Class, classname, supers, classdict)
+        return Class
+    
+class SubMetaObj(SuperMetaObj):
+    def __New__(self, classname, supers, classdict):
+        print('In SubMetaObj.new: ', classname, supers, classdict, sep='\n...')
+        return type(classname, supers, classdict)
+    def __Init__(self, Class, classname, supers, classdict):
+        print('In SubMetaObj.init:', classname, supers, classdict, sep='\n...')
+        print('...init class object:', list(Class.__dict__.keys()))
+        
+class Spam(Eggs, metaclass=SubMetaObj()): # Invoke Sub instance via Super.__call__
+    ...rest of file unchanged...
+```
+
+```python
+c:\code> py −3 metaclass4-super.py
+making class
+In SuperMetaObj.call:
+...as before...
+In SubMetaObj.new:
+...as before...
+In SubMetaObj.init:
+...as before...
+making instance
+data: 1 3
+```
 
 
 
+##### 用元类重载类创建调用
 
+The redefinitions of both `__new__` and `__call__` must be careful to call back to their defaults in type if they mean to make a class in the end, and `__call__` must invoke type to kick off the other two here:
 
+```python
+# metaclass5.py
+# Classes can catch calls too (but built-ins look in metas, not supers!)
+class SuperMeta(type):
+    def __call__(meta, classname, supers, classdict):
+        print('In SuperMeta.call: ', classname, supers, classdict, sep='\n...')
+        return type.__call__(meta, classname, supers, classdict)
+    def __init__(Class, classname, supers, classdict):
+        print('In SuperMeta init:', classname, supers, classdict, sep='\n...')
+        print('...init class object:', list(Class.__dict__.keys()))
+        print('making metaclass')
+        
+class SubMeta(type, metaclass=SuperMeta):
+    def __new__(meta, classname, supers, classdict):
+        print('In SubMeta.new: ', classname, supers, classdict, sep='\n...')
+        return type.__new__(meta, classname, supers, classdict)
+    def __init__(Class, classname, supers, classdict):
+        print('In SubMeta init:', classname, supers, classdict, sep='\n...')
+        print('...init class object:', list(Class.__dict__.keys()))
 
+class Eggs:
+     pass
+    
+print('making class')
+class Spam(Eggs, metaclass=SubMeta): # Invoke SubMeta, via SuperMeta.__call__
+    data = 1
+    def meth(self, arg):
+        return self.data + arg
+    
+print('making instance')
+X = Spam()
+print('data:', X.data, X.meth(2))
+```
 
+当这段代码运行的时候，所有3个重新定义的方法都依次运行。这基本上就是`type`对象默认做的事情：
+
+```python
+c:\code> py −3 metaclass5.py
+making metaclass
+In SuperMeta init:
+...SubMeta
+...(<class 'type'>,)
+...{'__init__': <function SubMeta.__init__ at 0x028F92F0>, ...}
+...init class object: ['__doc__', '__module__', '__new__', '__init__, ...]
+making class
+In SuperMeta.call:
+...Spam
+...(<class '__main__.Eggs'>,)
+...{'data': 1, 'meth': <function Spam.meth at 0x028F9378>, '__module__': '__main__'}
+In SubMeta.new:
+...Spam
+...(<class '__main__.Eggs'>,)
+...{'data': 1, 'meth': <function Spam.meth at 0x028F9378>, '__module__': '__main__'}
+In SubMeta init:
+...Spam
+...(<class '__main__.Eggs'>,)
+...{'data': 1, 'meth': <function Spam.meth at 0x028F9378>, '__module__': '__main__'}
+...init class object: ['__qualname__', '__module__', '__doc__', 'data', 'meth']
+making instance
+data: 1 3
+```
+
+This example is complicated by the fact that it overrides a method invoked by a builtin operation—in this case, the call run automatically to create a class. Metaclasses are used to create class objects, but only generate instances of themselves when called in a metaclass role. Because of this, name lookup with metaclasses may be somewhat different than what we are accustomed to. The `__call__` method, for example, is looked up by built-ins in the class (a.k.a. type) of an object; for metaclasses, this means the metaclass of a metaclass!
+
+As we’ll see ahead, metaclasses also inherit names from other metaclasses normally, but as for normal classes, this seems to apply to explicit name fetches only, not to the implicit lookup of names for built-in operations such as calls. The latter appears to look in the metaclass’s class, available in its `__class__` link—which is either the default type or a metaclass. This is the same built-ins routing issue we’ve seen so often in this book for normal class instances. The metaclass in `SubMeta` is required to set this link, though this also kicks off a metaclass construction step for the metaclass itself.
+
+Trace the invocations in the output. `SuperMeta`’s `__call__` method is not run for the call to SuperMeta when making `SubMeta` (this goes to type instead), but is run for the `SubMeta` call when making `Spam`. Inheriting normally from `SuperMeta` does not suffice to catch `SubMeta` calls, and for reasons we’ll see later is actually the wrong thing to do for operator overloading methods: `SuperMeta`’s `__call__` is then acquired by `Spam`, causing `Spam` instance creation calls to fail before any instance is ever created. Subtle but true!
+
+Here’s an illustration of the issue in simpler terms—a normal superclass is skipped for built-ins, but not for explicit fetches and calls, the latter relying on normal attribute name inheritance:
+
+```python
+class SuperMeta(type):
+    def __call__(meta, classname, supers, classdict): # By name, not built-in
+        print('In SuperMeta.call:', classname)
+        return type.__call__(meta, classname, supers, classdict)
+
+class SubMeta(SuperMeta): # Created by type default
+    def __init__(Class, classname, supers, classdict): # Overrides type.__init__
+        print('In SubMeta init:', classname)
+
+print(SubMeta.__class__)
+print([n.__name__ for n in SubMeta.__mro__])
+print()
+print(SubMeta.__call__) # Not a data descriptor if found by name
+print()
+SubMeta.__call__(SubMeta, 'xxx', (), {}) # Explicit calls work: class inheritance
+print()
+SubMeta('yyy', (), {}) # But implicit built-in calls do not: type
+```
+
+```
+c:\code> py −3 metaclass5b.py
+<class 'type'>
+['SubMeta', 'SuperMeta', 'type', 'object']
+<function SuperMeta.__call__ at 0x029B9158>
+In SuperMeta.call: xxx
+In SubMeta init: xxx
+In SubMeta init: yyy
+```
+
+Of course, this specific example is a special case: catching a built-in run on a metaclass, a likely rare usage related to `__call__` here. But it underscores a core asymmetry and apparent inconsistency: *normal attribute inheritance is not fully used for built-in dispatch* —for both instances and classes.
+
+To truly understand this example’s subtleties, though, we need to get more formal about what metaclasses mean for Python name resolution in general.
 
 
 
 ### 40.5 继承和实例
+
+
 
 
 
