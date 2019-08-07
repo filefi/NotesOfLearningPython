@@ -5248,9 +5248,245 @@ Spam = type('Spam', (Eggs,), {'data': 1, 'meth': meth, '__module__': '__main__'}
 
 ### 40.3 声明元类
 
+要告诉Python用一个定制的元类来创建一个类，直接声明一个元类来拦截常规的类创建调用。
+
+#### 在3.X中声明元类
+
+在Python 3.X中，在类头部 (header) 中把想要的元类作为一个关键字参数列出来：
+
+```python
+class Spam(metaclass=Meta): # 3.X version (only)
+```
+
+继承的超类也可以列在类头部中，例如，下面的新类`Spam`继承自`Eggs`，但同时也是元类`Meta`的实例：
+
+```python
+class Spam(Eggs, metaclass=Meta): # Normal supers OK: must list first
+```
+
+在这个形式中，超类必须列在元类前面。
+
+#### Metaclass Dispatch in Both 3.X and 2.X
+
+当以这些方式声明的时候，创建类对象的调用在`class`语句的底部运行，修改为调用元类而不是默认的`type`：
+
+```python
+class = Meta(classname, superclasses, attributedict)
+```
+
+由于元类是`type`的一个子类，所以`type`类的`__call__`把创建和初始化新的类对象的调用委托给元类，如果它定义了这些方法的定制版本：
+
+```python
+Meta.__new__(Meta, classname, superclasses, attributedict)
+Meta.__init__(class, classname, superclasses, attributedict)
+```
+
+为了演示，这里再次给出前一节的例子，用Python 3.X的元类声明扩展：
+
+```python
+class Spam(Eggs, metaclass=Meta): # Inherits from Eggs, instance of Meta
+    data = 1 # Class data attribute
+    def meth(self, arg): # Class method attribute
+        return self.data + arg
+```
+
+在这条`class`语句的末尾，Python内部运行如下的代码来创建`class`对象：
+
+```python
+Spam = Meta('Spam', (Eggs,), {'data': 1, 'meth': meth, '__module__': '__main__'})
+```
+
+如果元类定义了`__new__`或`__init__`的自己版本，在此处的调用期间，它们将依次由继承的`type`类的`__call__`方法调用，以创建并初始化新类。
+
 
 
 ### 40.4 编写元类
+
+#### 基本元类
+
+只带有一个`__new__`方法的`type`的子类可能就是最简单的元类了。例如，下例中的元类`Meta`只有一个`__new__`方法，它执行所需的任何定制并且调用超类`type`的`__new__`方法来创建并运行新的类对象：
+
+```python
+class Meta(type):
+    def __new__(meta, classname, supers, classdict):
+        # Run by inherited type.__call__
+        return type.__new__(meta, classname, supers, classdict)
+```
+
+下面这个更具实用性的实例，将打印添加到元类和文件以便追踪：
+
+```python
+# metaclass1.py
+
+class MetaOne(type):
+    def __new__(meta, classname, supers, classdict):
+        print('In MetaOne.new:', meta, classname, supers, classdict, sep='\n...')
+        return type.__new__(meta, classname, supers, classdict)
+    
+class Eggs:
+    pass
+
+print('making class')
+class Spam(Eggs, metaclass=MetaOne): # Inherits from Eggs, instance of MetaOne
+    data = 1 # Class data attribute
+    def meth(self, arg): # Class method attribute
+        return self.data + arg
+    
+print('making instance')
+X = Spam()
+print('data:', X.data, X.meth(2))
+```
+
+在这里，`Spam`继承自`Eggs`并且是`MetaOne`的一个实例，但是`X`是`Spam`的一个实例并且继承自它。在我们真正创建一个实例之前，元类用来处理类，并且类用来处理实例：
+
+```python
+c:\code> py −3 metaclass1.py
+making class
+In MetaOne.new:
+...<class '__main__.MetaOne'>
+...Spam
+...(<class '__main__.Eggs'>,)
+...{'data': 1, 'meth': <function Spam.meth at 0x02A191E0>, '__module__': '__main__'}
+making instance
+data: 1 3
+```
+
+以上输出省略了命名空间中部分不相关的内置`__X__`变量名。
+
+
+
+#### 定制构建和初始化
+
+元类也可以接入`__init__`协议，由`type`对象的`__call__`调用：通常，`__new__`创建并返回了类对象，`__init__`初始化了已经创建的类。元类也可以用做在创建时管理类的钩子：
+
+```python
+# metaclass2.py
+
+class MetaTwo(type):
+    def __new__(meta, classname, supers, classdict):
+        print('In MetaTwo.new: ', classname, supers, classdict, sep='\n...')
+        return type.__new__(meta, classname, supers, classdict)
+    def __init__(Class, classname, supers, classdict):
+        print('In MetaTwo.init:', classname, supers, classdict, sep='\n...')
+        print('...init class object:', list(Class.__dict__.keys()))
+        
+class Eggs:
+    pass
+
+print('making class')
+class Spam(Eggs, metaclass=MetaTwo): # Inherits from Eggs, instance of MetaTwo
+    data = 1 # Class data attribute
+    def meth(self, arg): # Class method attribute
+        return self.data + arg
+
+print('making instance')
+X = Spam()
+print('data:', X.data, X.meth(2))
+```
+
+在这个例子中，类初始化方法在类构建方法之后运行，但是，两者都在`class`语句最后运行，并且在创建任何实例之前运行：
+
+```python
+c:\code> py −3 metaclass2.py
+making class
+In MetaTwo.new:
+...Spam
+...(<class '__main__.Eggs'>,)
+...{'data': 1, 'meth': <function Spam.meth at 0x02967268>, '__module__': '__main__'}
+In MetaTwo.init:
+...Spam
+...(<class '__main__.Eggs'>,)
+...{'data': 1, 'meth': <function Spam.meth at 0x02967268>, '__module__': '__main__'}
+...init class object: ['__qualname__', 'data', '__module__', 'meth', '__doc__']
+making instance
+data: 1 3
+```
+
+
+
+#### 其他元类编程技巧
+
+尽管重新定义`type`超类的`__new__`和`__init__`方法是元类向类对象创建过程插入逻辑的最常见方法，其他的方案也是可能的。
+
+##### 使用简单的工厂函数
+
+例如，元类根本不是真的需要类。正如我们所学习的，`class`语句发布了一条简单的调用，在其处理的最后创建了一个类。因此，实际上任何可调用对象都可以用作一个元类，只要它接收传递的参数并且返回与目标类兼容的一个对象。实际上，一个简单的对象工厂函数就像一个类一样工作：
+
+```python
+# metaclass3.py
+# A simple function can serve as a metaclass too
+
+def MetaFunc(classname, supers, classdict):
+    print('In MetaFunc: ', classname, supers, classdict, sep='\n...')
+    return type(classname, supers, classdict)
+
+class Eggs:
+    pass
+
+print('making class')
+class Spam(Eggs, metaclass=MetaFunc): # Run simple function at end
+    data = 1 # Function returns class
+    def meth(self, arg):
+        return self.data + arg
+
+print('making instance')
+X = Spam()
+print('data:', X.data, X.meth(2))
+```
+
+运行的时候，在声明`class`语句的末尾调用该函数，并且它返回期待的新的类对象。该函数直接捕获`type`对象的`__call__`通常会默认拦截的调用：
+
+```python
+c:\code> py −3 metaclass3.py
+making class
+In MetaFunc:
+...Spam
+...(<class '__main__.Eggs'>,)
+...{'data': 1, 'meth': <function Spam.meth at 0x029471E0>, '__module__': '__main__'}
+making instance
+data: 1 3
+```
+
+
+
+##### 使用普通类来重载类创建调用
+
+```python
+# A normal class instance can serve as a metaclass too
+class MetaObj:
+    def __call__(self, classname, supers, classdict):
+        print('In MetaObj.call: ', classname, supers, classdict, sep='\n...')
+        Class = self.__New__(classname, supers, classdict)
+        self.__Init__(Class, classname, supers, classdict)
+        return Class
+    def __New__(self, classname, supers, classdict):
+        print('In MetaObj.new: ', classname, supers, classdict, sep='\n...')
+        return type(classname, supers, classdict)
+    def __Init__(self, Class, classname, supers, classdict):
+        print('In MetaObj.init:', classname, supers, classdict, sep='\n...')
+        print('...init class object:', list(Class.__dict__.keys()))
+
+class Eggs:
+    pass
+
+print('making class')
+class Spam(Eggs, metaclass=MetaObj()): # MetaObj is normal class instance
+    data = 1 # Called at end of statement
+    def meth(self, arg):
+        return self.data + arg
+
+print('making instance')
+X = Spam()
+print('data:', X.data, X.meth(2))
+```
+
+
+
+
+
+
+
+
 
 
 
