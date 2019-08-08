@@ -5656,13 +5656,274 @@ To truly understand this example’s subtleties, though, we need to get more for
 
 ### 40.5 继承和实例
 
+由于元类以类似于继承超类的方式来制定，因此它们乍看上去有点容易令人混淆。一些关键点有助于概括和澄清这一模型：
 
+- **继承自`type`类的元类** 
+  - 尽管它们有一种特殊的角色元类，但元类是用`class`语句编写的，并且遵从Python中有用的OOP模型。例如，就像`type`的子类一样，它们可以重新定义`type`对象的方法，需要的时候重载或定制它们。元类通常重新定义`type`类的`__new__`和`__init__`，以定制类创建和初始化，但是，如果它们希望直接捕获类末尾的创建调用的话，它们也可以重新定义`__call__`。尽管元类不常见，它们甚至是返回任意对象而不是`type`子类的简单函数。
+- **元类声明被子类继承** 
+  - 在用户定义的类中，`metaclass=M`声明由该类的子类继承，因此，对于在超类链中继承了这一声明的每个类的构建，该元类都将运行。
+- **元类属性没有被类实例继承** 
+  - 元类声明指定了一个实例关系，它和继承不同。由于类是元类的实例，所以元类中定义的行为应用于类，而不是类随后的实例。实例从它们的类和超类获取行为，但是，不是从任何元类获取行为。从技术上讲，实例属性查找通常只是搜索实例及其所有类的`__dict__`字典；元类不包含在实例查找中。
+- **元类属性被类获取 (Metaclass attributes are acquired by classes) **
+  - By contrast, classes do acquire methods of their metaclasses by virtue of the instancerelationship. This is a source of class behavior that processes classes themselves.Technically, classes acquire metaclass attributes through the class’s `__class__` link just as normal instances acquire names from their class, but inheritance via `__dict__` search is attempted first: when the same name is available to a class in both a metaclass and a superclass, the superclass (inheritance) version is used instead of that on a metaclass (instance). The class’s `__class__`, however, is not followed for its own instances: metaclass attributes are made available to their instance classes, but not to instances of those instance classes (and see the earlier reference to Dr. Seuss...).
+
+为了说明，考虑如下的例子：
+
+```python
+# File metainstance.py
+class MetaOne(type):
+    def __new__(meta, classname, supers, classdict): # Redefine type method
+        print('In MetaOne.new:', classname)
+        return type.__new__(meta, classname, supers, classdict)
+    def toast(self):
+        return 'toast'
+
+class Super(metaclass=MetaOne): # Metaclass inherited by subs too
+    def spam(self): # MetaOne run twice for two classes
+        return 'spam'
+    
+class Sub(Super): # Superclass: inheritance versus instance
+    def eggs(self): # Classes inherit from superclasses
+        return 'eggs' # But not from metaclasses
+```
+
+当这段代码作为脚本或模块运行时，元类处理客户类`Super`和`Sub`的创建 (construction) ；并且实例只继承类属性，但没有继承元类的属性：
+
+```python
+>>> from metainstance import * # Runs class statements: metaclass run twice
+In MetaOne.new: Super
+In MetaOne.new: Sub
+>>> X = Sub() # Normal instance of user-defined class
+>>> X.eggs() # Inherited from Sub
+'eggs'
+>>> X.spam() # Inherited from Super
+'spam'
+>>> X.toast() # Not inherited from metaclass
+AttributeError: 'Sub' object has no attribute 'toast'
+```
+
+相比之下，类`Super`和`Sub`都从它们的超类继承了变量名，并从它们的元类获取到了变量名：
+
+```python
+>>> Sub.eggs(X) # Own method
+'eggs'
+>>> Sub.spam(X) # Inherited from Super
+'spam'
+>>> Sub.toast() # Acquired from metaclass
+'toast'
+>>> Sub.toast(X) # Not a normal class method
+TypeError: toast() takes 1 positional argument but 2 were given
+```
+
+因为变量名解析到一个元类方法，而不是一个类方法，所以，在上例中，当我们传入一个实例时调用失败了。从元类取得的方法是绑定到主体类对象的；然而，如果通过类来取得普通类的方法，则取得的方法是未绑定的，如果通过实例来取得普通类的方法，则是绑定的：
+
+```python
+>>> Sub.toast
+<bound method MetaOne.toast of <class 'metainstance.Sub'>>
+>>> Sub.spam
+<function Super.spam at 0x0298A2F0>
+>>> X.spam
+<bound method Sub.spam of <metainstance.Sub object at 0x02987438>>
+```
+
+
+
+#### 元类VS超类
+In even simpler terms, watch what happens in the following: as an instance of the A metaclass type, class B acquires A’s attribute, but this attribute is not made available for inheritance by B’s own instances—the acquisition of names by metaclass instances is distinct from the normal inheritance used for class instances:
+
+```python
+>>> class A(type): attr = 1
+>>> class B(metaclass=A): pass # B is meta instance and acquires meta attr
+>>> I = B() # I inherits from class but not meta!
+>>> B.attr
+1
+>>> I.attr
+AttributeError: 'B' object has no attribute 'attr'
+>>> 'attr' in B.__dict__, 'attr' in A.__dict__
+(False, True)
+```
+
+By contrast, if A morphs from metaclass to superclass, then names inherited from an A superclass become available to later instances of B, and are located by searching namespace dictionaries in classes in the tree—that is, by checking the `__dict__` of objects in the method resolution order (MRO), much like the mapattrs example we coded back in Chapter 32:
+
+```python
+>>> class A: attr = 1
+>>> class B(A): pass # I inherits from class and supers
+>>> I = B()
+>>> B.attr
+1
+>>> I.attr
+1
+>>> 'attr' in B.__dict__, 'attr' in A.__dict__
+(False, True)
+```
+
+This is why metaclasses often do their work by manipulating a new class’s namespace dictionary, if they wish to influence the behavior of later instance objects—instances will see names in a class, but not its metaclass. Watch what happens, though, if the same name is available in both attribute sources—the inheritance name is used instead of instance acquisition:
+
+```python
+>>> class M(type): attr = 1
+>>> class A: attr = 2
+>>> class B(A, metaclass=M): pass # Supers have precedence over metas
+>>> I = B()
+>>> B.attr, I.attr
+(2, 2)
+>>> 'attr' in B.__dict__, 'attr' in A.__dict__, 'attr' in M.__dict__
+(False, True, True)
+```
+
+This is true regardless of the relative height of the inheritance and instance sources— Python checks the `__dict__` of each class on the MRO (inheritance), before falling back on metaclass acquisition (instance):
+
+```python
+>>> class M(type): attr = 1
+>>> class A: attr = 2
+>>> class B(A): pass
+>>> class C(B, metaclass=M): pass # Super two levels above meta: still wins
+>>> I = C()
+>>> I.attr, C.attr
+(2, 2)
+>>> [x.__name__ for x in C.__mro__] # See Chapter 32 for all things MRO
+['C', 'B', 'A', 'object']
+```
+
+In fact, classes acquire metaclass attributes through their `__class__` link, in the same way that normal instances inherit from classes through their `__class__`, which makes sense, given that classes are also instances of metaclasses. The chief distinction is that instance inheritance does not follow a class’s `__class__`, but instead restricts its scope to the `__dict__` of each class in a tree per the MRO—following `__bases__` at each class only, and using only the instance’s `__class__` link once:
+
+```python
+>>> I.__class__ # Followed by inheritance: instance's class
+<class '__main__.C'>
+>>> C.__bases__ # Followed by inheritance: class's supers
+(<class '__main__.B'>,)
+>>> C.__class__ # Followed by instance acquisition: metaclass
+<class '__main__.M'>
+>>> C.__class__.attr # Another way to get to metaclass attributes
+1
+```
+
+
+
+
+#### 关于继承的来龙去脉
+
+第五版，暂略
 
 
 
 ### 40.6 元类方法
 
+Just as important as the inheritance of names, methods in metaclasses process their instance classes—not the normal instance objects we’ve known as “self,” but classes themselves. This makes them similar in spirit and form to the class methods we studied in Chapter 32, though they again are available in the metaclasses instance realm only, not to normal instance inheritance. The failure at the end of the following, for example, stems from the explicit name inheritance rules of the prior section:
 
+```python
+>>> class A(type):
+        def x(cls): print('ax', cls) # A metaclass (instances=classes)
+        def y(cls): print('ay', cls) # y is overridden by instance B
+>>> class B(metaclass=A):
+        def y(self): print('by', self) # A normal class (normal instances)
+        def z(self): print('bz', self) # Namespace dict holds y and z
+    
+>>> B.x # x acquired from metaclass
+<bound method A.x of <class '__main__.B'>>
+>>> B.y # y and z defined in class itself
+<function B.y at 0x0295F1E0>
+>>> B.z
+<function B.z at 0x0295F378>
+>>> B.x() # Metaclass method call: gets cls
+ax <class '__main__.B'>
+>>> I = B() # Instance method calls: get inst
+>>> I.y()
+by <__main__.B object at 0x02963BE0>
+>>> I.z()
+bz <__main__.B object at 0x02963BE0>
+>>> I.x() # Instance doesn't see meta names
+AttributeError: 'B' object has no attribute 'x'
+```
+
+
+
+#### Metaclass Methods Versus Class Methods
+
+Though they differ in inheritance visibility, much like class methods, metaclass methods are designed to manage class-level data. In fact, their roles can overlap—much as metaclasses do in general with class decorators—but metaclass methods are not accessible except through the class, and do not require an explicit classmethod class-level data declaration in order to be bound with the class. In other words, metaclass methods can be thought of as implicit class methods, with limited visibility:
+
+```python
+>>> class A(type):
+        def a(cls): # Metaclass method: gets class
+            cls.x = cls.y + cls.z
+            
+>>> class B(metaclass=A):
+        y, z = 11, 22
+        @classmethod # Class method: gets class
+        def b(cls):
+            return cls.x
+        
+>>> B.a() # Call metaclass method; visible to class only
+>>> B.x # Creates class data on B, accessible to normal instances
+33
+>>> I = B()
+>>> I.x, I.y, I.z
+(33, 11, 22)
+>>> I.b() # Class method: sends class, not instance; visible to instance
+33
+>>> I.a() # Metaclass methods: accessible through class only
+AttributeError: 'B' object has no attribute 'a'
+```
+
+
+
+#### Operator Overloading in Metaclass Methods
+
+Just like normal classes, metaclasses may also employ operator overloading to make built-in operations applicable to their instance classes. The `__getitem__` indexing method in the following metaclass, for example, is a metaclass method designed to process classes themselves—the classes that are instances of the metaclass, not those classes’ own later instances. In fact, per the inheritance algorithms sketched earlier, normal class instances don’t inherit names acquired via the metaclass instance relationship at all, though they can access names present on their own classes:
+
+```python
+>>> class A(type):
+        def __getitem__(cls, i):        # Meta method for processing classes:
+            return cls.data[i]          # Built-ins skip class, use meta
+                                        # Explicit names search class + meta
+>>> class B(metaclass=A):               # Data descriptors in meta used first
+        data = 'spam'
+        
+>>> B[0]                  # Metaclass instance names: visible to class only
+'s'
+>>> B.__getitem__
+<bound method A.__getitem__ of <class '__main__.B'>>
+>>> I = B()
+>>> I.data, B.data        # Normal inheritance names: visible to instance and class
+('spam', 'spam')
+>>> I[0]
+TypeError: 'B' object does not support indexing
+```
+
+It’s possible to define a `__getattr__` on a metaclass too, but it can be used to process its instance classes only, not their normal instances—as usual, it’s not even acquired by a class’s instances:
+
+```python
+>>> class A(type):
+        def __getattr__(cls, name): # Acquired by class B getitem
+            return getattr(cls.data, name) # But not run same by built-ins
+>>> class B(metaclass=A):
+        data = 'spam'
+>>> B.upper()
+'SPAM'
+>>> B.upper
+<built-in method upper of str object at 0x029E7420>
+>>> B.__getattr__
+<bound method A.__getattr__ of <class '__main__.B'>>
+>>> I = B()
+>>> I.upper
+AttributeError: 'B' object has no attribute 'upper'
+>>> I.__getattr__
+AttributeError: 'B' object has no attribute '__getattr__'
+```
+
+Moving the `__getattr__` to a metaclass doesn’t help with its built-in interception shortcomings, though. In the following continuation, explicit attributes are routed to the metaclass’s `__getattr__`, but built-ins are not, despite that fact the indexing is routed to a metaclass’s `__getitem__` in the first example of the section—strongly suggesting that new-style `__getattr__` is a special case of a special case, and further recommending code simplicity that avoids dependence on such boundary cases:
+
+```python
+>>> B.data = [1, 2, 3]
+>>> B.append(4) # Explicit normal names routed to meta's getattr
+>>> B.data
+[1, 2, 3, 4]
+>>> B.__getitem__(0) # Explicit special names routed to meta's gettarr
+1
+>>> B[0] # But built-ins skip meta's gettatr too?!
+TypeError: 'A' object does not support indexing
+```
+
+As you can probably tell, metaclasses are interesting to explore, but it’s easy to lose track of their big picture. In the interest of space, we’ll omit additional fine points here. For the purposes of this chapter, it’s more important to show why you’d care to use such a tool in the first place. Let’s move on to some larger examples to sample the roles of metaclasses in action. As we’ll find, like so many tools in Python, metaclasses are first and foremost about easing maintenance work by eliminating redundancy.
 
 
 
