@@ -4,6 +4,8 @@
 
 ### 37.1 Python 3.X 中字符串的变化
 
+
+
 Python 2.X的`str`和`unicode`类型已经融入了Python 3.X的`str`和`bytes`类型，并且增加了一种新的可变的类型`bytearray`。
 
 
@@ -5664,7 +5666,7 @@ To truly understand this example’s subtleties, though, we need to get more for
   - 在用户定义的类中，`metaclass=M`声明由该类的子类继承，因此，对于在超类链中继承了这一声明的每个类的构建，该元类都将运行。
 - **元类属性没有被类实例继承** 
   - 元类声明指定了一个实例关系，它和继承不同。由于类是元类的实例，所以元类中定义的行为应用于类，而不是类随后的实例。实例从它们的类和超类获取行为，但是，不是从任何元类获取行为。从技术上讲，实例属性查找通常只是搜索实例及其所有类的`__dict__`字典；元类不包含在实例查找中。
-- **元类属性被类获取 (Metaclass attributes are acquired by classes) **
+- **元类属性被类获取 (Metaclass attributes are acquired by classes) ** 
   - By contrast, classes do acquire methods of their metaclasses by virtue of the instancerelationship. This is a source of class behavior that processes classes themselves.Technically, classes acquire metaclass attributes through the class’s `__class__` link just as normal instances acquire names from their class, but inheritance via `__dict__` search is attempted first: when the same name is available to a class in both a metaclass and a superclass, the superclass (inheritance) version is used instead of that on a metaclass (instance). The class’s `__class__`, however, is not followed for its own instances: metaclass attributes are made available to their instance classes, but not to instances of those instance classes (and see the earlier reference to Dr. Seuss...).
 
 为了说明，考虑如下的例子：
@@ -5928,6 +5930,212 @@ As you can probably tell, metaclasses are interesting to explore, but it’s eas
 
 
 ### 40.7 实例：向类添加方法
+
+#### 手动扩展
+
+```python
+# Extend manually - adding new methods to classes
+class Client1:
+    def __init__(self, value):
+        self.value = value
+    def spam(self):
+        return self.value * 2
+
+class Client2:
+    value = 'ni?'
+    def eggsfunc(obj):
+        return obj.value * 4
+    def hamfunc(obj, value):
+        return value + 'ham'
+
+Client1.eggs = eggsfunc
+Client1.ham = hamfunc
+
+Client2.eggs = eggsfunc
+Client2.ham = hamfunc
+
+X = Client1('Ni!')
+print(X.spam())
+print(X.eggs())
+print(X.ham('bacon'))
+
+Y = Client2()
+print(Y.eggs())
+print(Y.ham('bacon'))
+```
+
+```
+c:\code> py −3 extend-manual.py
+Ni!Ni!
+Ni!Ni!Ni!Ni!
+baconham
+ni?ni?ni?ni?
+baconham
+```
+
+
+
+#### 基于元类的扩展
+
+如果我们在元类中编写扩展，那么声明了元类的每个类都将统一且正确地扩展，并自动地接收未来做出的任何修改。如下的代码展示了这一点：
+
+```python
+# Extend with a metaclass - supports future changes better
+def eggsfunc(obj):
+    return obj.value * 4
+
+def hamfunc(obj, value):
+    return value + 'ham'
+
+class Extender(type):
+    def __new__(meta, classname, supers, classdict):
+        classdict['eggs'] = eggsfunc
+        classdict['ham'] = hamfunc
+        return type.__new__(meta, classname, supers, classdict)
+
+class Client1(metaclass=Extender):
+    def __init__(self, value):
+    self.value = value
+    def spam(self):
+    return self.value * 2
+
+class Client2(metaclass=Extender):
+    value = 'ni?'
+
+X = Client1('Ni!')
+print(X.spam())
+print(X.eggs())
+print(X.ham('bacon'))
+
+Y = Client2()
+print(Y.eggs())
+print(Y.ham('bacon'))
+```
+
+```
+c:\code> py −3 extend-meta.py
+Ni!Ni!
+Ni!Ni!Ni!Ni!
+baconham
+ni?ni?ni?ni?
+baconham
+```
+
+
+
+#### 元类VS类装饰器：第2回合
+
+请记住，上一章的类装饰器常常和本章的元类在功能上有重合。这源自于如下的事实：
+
+- 在class语句的末尾，类装饰器把类名重新绑定到一个函数的结果。
+- 元类通过在一条class语句的末尾把类对象创建过程路由到一个对象来工作。
+
+##### 基于装饰器的扩展
+
+前面小节的元类示例，像创建的一个类添加方法，也可以用一个类装饰器来编写。在这种模式下，装饰器大致与元类的`__init__`方法对应，因为在调用装饰器的时候，类对象已经创建了。如下的输出与前面的元类代码的输出相同：
+
+```python
+# Extend with a decorator: same as providing __init__ in a metaclass
+def eggsfunc(obj):
+    return obj.value * 4
+def hamfunc(obj, value):
+    return value + 'ham'
+
+def Extender(aClass):
+    aClass.eggs = eggsfunc # Manages class, not instance
+    aClass.ham = hamfunc # Equiv to metaclass __init__
+    return aClass
+
+@Extender
+class Client1: # Client1 = Extender(Client1)
+    def __init__(self, value): # Rebound at end of class stmt
+        self.value = value
+    def spam(self):
+        return self.value * 2
+
+@Extender
+class Client2:
+    value = 'ni?'
+
+X = Client1('Ni!') # X is a Client1 instance
+print(X.spam())
+print(X.eggs())
+print(X.ham('bacon'))
+
+Y = Client2()
+print(Y.eggs())
+print(Y.ham('bacon'))
+```
+
+
+
+##### 管理实例而不是类
+
+正如我们已经见到的，类装饰器常常可以和元类一样充当类管理角色。元类往往和装饰器一样充当实例管理的角色，但是管理实例需要一些额外工作。
+
+例如，前一章中的类装饰器示例，无论何时，获取一个类实例的任意常规命名的属性的时候，它用来打印一条跟踪消息：
+
+```python
+# Class decorator to trace external instance attribute fetches
+def Tracer(aClass): # On @ decorator
+    class Wrapper:
+        def __init__(self, *args, **kargs): # On instance creation
+            self.wrapped = aClass(*args, **kargs) # Use enclosing scope name
+        def __getattr__(self, attrname):
+            print('Trace:', attrname) # Catches all but .wrapped
+            return getattr(self.wrapped, attrname) # Delegate to wrapped object
+    return Wrapper
+
+@Tracer
+class Person: # Person = Tracer(Person)
+    def __init__(self, name, hours, rate): # Wrapper remembers Person
+        self.name = name
+        self.hours = hours
+        self.rate = rate # In-method fetch not traced
+    def pay(self):
+        return self.hours * self.rate
+    
+bob = Person('Bob', 40, 50) # bob is really a Wrapper
+print(bob.name) # Wrapper embeds a Person
+print(bob.pay()) # Triggers __getattr__
+```
+
+```
+c:\code> py −3 manage-inst-deco.py
+Trace: name
+Bob
+Trace: pay
+2000
+```
+
+尽管用一个元类也可能实现同样的效果，但它似乎概念上不太直接明了。 **元类明确地设计来管理类对象创建，并且它们有一个为此目的而设计的接口。** 如下的元类和前面的装饰器具有同样的效果和输出：
+
+```python
+# Manage instances like the prior example, but with a metaclass
+def Tracer(classname, supers, classdict): # On class creation call
+    aClass = type(classname, supers, classdict) # Make client class
+    class Wrapper:
+        def __init__(self, *args, **kargs): # On instance creation
+            self.wrapped = aClass(*args, **kargs)
+        def __getattr__(self, attrname):
+            print('Trace:', attrname) # Catches all but .wrapped
+            return getattr(self.wrapped, attrname) # Delegate to wrapped object
+    return Wrapper
+
+class Person(metaclass=Tracer): # Make Person with Tracer
+    def __init__(self, name, hours, rate): # Wrapper remembers Person
+        self.name = name
+        self.hours = hours
+        self.rate = rate # In-method fetch not traced
+    def pay(self):
+        return self.hours * self.rate
+
+bob = Person('Bob', 40, 50) # bob is really a Wrapper
+print(bob.name) # Wrapper embeds a Person
+print(bob.pay()) # Triggers __getattr__
+```
+
+**通常，元类更适合于类对象管理，因为它们就设计为如此。**
 
 
 
