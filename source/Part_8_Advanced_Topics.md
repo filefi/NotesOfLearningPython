@@ -6139,9 +6139,331 @@ print(bob.pay()) # Triggers __getattr__
 
 
 
+##### 元类和类装饰器等价吗？ ()
+
+The preceding section illustrated that metaclasses incur an extra step to create the class when used in instance management roles, and hence can’t quite subsume decorators in all use cases. But what about the inverse—are decorators a replacement for metaclasses?
+
+Just in case this chapter has not yet managed to make your head explode, consider the following metaclass coding alternative too—a class decorator that returns a metaclass instance:
+
+```python
+# A decorator can call a metaclass, though not vice versa without type()
+>>> class Metaclass(type):
+        def __new__(meta, clsname, supers, attrdict):
+            print('In M.__new__:')
+            print([clsname, supers, list(attrdict.keys())])
+            return type.__new__(meta, clsname, supers, attrdict)
+>>> def decorator(cls):
+        return Metaclass(cls.__name__, cls.__bases__, dict(cls.__dict__))
+
+>>> class A:
+        x = 1
+
+>>> @decorator
+    class B(A):
+        y = 2
+        def m(self): return self.x + self.y
+
+In M.__new__:
+['B', (<class '__main__.A'>,), ['__qualname__', '__doc__', 'm', 'y', '__module__']]
+>>> B.x, B.y
+(1, 2)
+>>> I = B()
+>>> I.x, I.y, I.m()
+(1, 2, 3)
+```
+
+This nearly proves the equivalence of the two tools, but really just in terms of dispatch at class construction time. Again, decorators essentially serve the same role as metaclass `__init__` methods. Because this decorator returns a metaclass instance, metaclasses— or at least their type superclass—are still assumed here. Moreover, this winds up triggering an additional metaclass call after the class is created, and isn’t an ideal scheme in real code—you might as well move this metaclass to the first creation step:
+
+```python
+>>> class B(A, metaclass=Metaclass): ... # Same effect, but makes just one class
+```
+
+Still, there is some tool redundancy here, and decorator and metaclass roles often overlap in practice. And although decorators don’t directly support the notion of class-level methods in metaclasses discussed earlier, methods and state in proxy objects created by decorators can achieve similar effects, though for space we’ll leave this last observation in the suggested explorations column.
+
+The inverse may not seem applicable—a metaclass can’t generally defer to a nonmetaclass decorator, because the class doesn’t yet exist until the metaclass call completes —although a metaclass can take the form of a simple callable that invokes type to create the class directly and passes it on to the decorator. In other words, the crucial hook in the model is the type call issued for class construction. Given that, metaclasses and class decorators are often functionally equivalent, with varying dispatch protocol models:
+
+```python
+>>> def Metaclass(clsname, supers, attrdict):
+        return decorator(type(clsname, supers, attrdict))
+>>> def decorator(cls): ...
+>>> class B(A, metaclass=Metaclass): ... # Metas can call decos and vice versa
+```
+
+In fact, metaclasses need not necessarily return a type instance either—any object compatible with the class coder’s expectations will do—and this further blurs the decorator/metaclass distinction:
+
+```python
+>>> def func(name, supers, attrs):
+        return 'spam'
+
+>>> class C(metaclass=func): # A class whose metaclass makes it a string!
+        attr = 'huh?'
+
+>>> C, C.upper()
+('spam', 'SPAM')
+>>> def func(cls):
+        return 'spam'
+
+>>> @func
+    class C: # A class whose decorator makes it a string!
+        attr = 'huh?'
+
+>>> C, C.upper()
+('spam', 'SPAM')
+```
+
+Odd metaclass and decorator tricks like these aside, timing often determines roles in practice, as stated earlier:
+
+- Because decorators run after a class is created, they incur an extra runtime step in class creation roles.
+- Because metaclasses must create classes, they incur an extra coding step in instance management roles. 
+
+In other words, neither completely subsumes the other. Strictly speaking, metaclasses might be a functional superset, as they can call decorators during class creation; but metaclasses can also be substantially heavier to understand and code, and many roles intersect completely. In practice, the need to take over class creation entirely is probably much less important than tapping into the process in general.
+
+Rather than follow this rabbit hole further, though, let’s move on to explore metaclass roles that may be a bit more typical and practical. The next section concludes this chapter with one more common use case—applying operations to a class’s methods automatically at class creation time.
+
+
+
+
+
 ### 40.8 实例：对方法应用装饰器
 
+可以将装饰器和元类结合起来使用，作为互补的工具。在本小节中，我们将展示一个示例，它就是这样的组合——对一个类的所有方法应用一个函数装饰器。
 
+#### 用装饰器手动跟踪
+
+```python
+# File decotools.py: assorted decorator tools
+import time
+def tracer(func): # Use function, not class with __call__
+    calls = 0 # Else self is decorator instance only
+    def onCall(*args, **kwargs):
+        nonlocal calls
+        calls += 1
+        print('call %s to %s' % (calls, func.__name__))
+        return func(*args, **kwargs)
+    return onCall
+
+def timer(label='', trace=True): # On decorator args: retain args
+    def onDecorator(func): # On @: retain decorated func
+        def onCall(*args, **kargs): # On calls: call original
+            start = time.clock() # State is scopes + func attr
+            result = func(*args, **kargs)
+            elapsed = time.clock() - start
+            onCall.alltime += elapsed
+            if trace:
+                format = '%s%s: %.5f, %.5f'
+                values = (label, func.__name__, elapsed, onCall.alltime)
+                print(format % values)
+            return result
+        onCall.alltime = 0
+        return onCall
+    return onDecorator
+```
+
+要手动使用这些装饰器，我们直接从模块导入它们，并且在想要跟踪或计时的每个方法前编写`@`装饰语法：
+
+```python
+from decotools import tracer
+
+class Person:
+    @tracer
+    def __init__(self, name, pay):
+        self.name = name
+        self.pay = pay
+    @tracer
+    def giveRaise(self, percent):        # giveRaise = tracer(giverRaise)
+        self.pay *= (1.0 + percent)      # onCall remembers giveRaise
+    @tracer
+    def lastName(self):                  # lastName = tracer(lastName)
+        return self.name.split()[-1]
+
+bob = Person('Bob Smith', 50000)
+sue = Person('Sue Jones', 100000)
+print(bob.name, sue.name)
+sue.giveRaise(.10)                       # Runs onCall(sue, .10)
+print('%.2f' % sue.pay)
+print(bob.lastName(), sue.lastName())    # Runs onCall(bob), remembers lastName
+```
+
+```
+c:\code> py −3 decoall-manual.py
+call 1 to __init__
+call 2 to __init__
+Bob Smith Sue Jones
+call 1 to giveRaise
+110000.00
+call 1 to lastName
+call 2 to lastName
+Smith Jones
+```
+
+
+
+#### 用元类和装饰器跟踪
+
+前一小节的手动装饰方法是有效的，但是它需要我们在想要跟踪的每个方法前面添加装饰语法，并且在不再想要跟踪的使用后删除该语法。如果想要跟踪一个类的每个方法，在较大的程序中，这会变得很繁琐。
+
+有了元类，我们可以对一个类的所有方法自动地应用跟踪装饰器——因为它们在构建一个类的时候运行，它们是把装饰包装器添加到一个类方法中的自然地方。通过扫描类的属性字典并测试函数对象，我们可以通过装饰器自动运行方法，并且把最初的名称重新绑定到结果。其效果与装饰器的自动方法名重新绑定是相同的，但是，我们可以更全面地应用它：
+
+```python
+# Metaclass that adds tracing decorator to every method of a client class
+from types import FunctionType
+from decotools import tracer
+
+class MetaTrace(type):
+    def __new__(meta, classname, supers, classdict):
+        for attr, attrval in classdict.items():
+            if type(attrval) is FunctionType: # Method?
+                classdict[attr] = tracer(attrval) # Decorate it
+        return type.__new__(meta, classname, supers, classdict) # Make class
+    
+class Person(metaclass=MetaTrace):
+    def __init__(self, name, pay):
+        self.name = name
+        self.pay = pay
+    def giveRaise(self, percent):
+        self.pay *= (1.0 + percent)
+    def lastName(self):
+        return self.name.split()[-1]
+
+bob = Person('Bob Smith', 50000)
+sue = Person('Sue Jones', 100000)
+print(bob.name, sue.name)
+sue.giveRaise(.10)
+print('%.2f' % sue.pay)
+print(bob.lastName(), sue.lastName())
+```
+
+当这段代码运行的时候，结果与前面是相同的——方法的调用将首先指向跟踪装饰器以跟踪，然后传递到最初的方法：
+
+```
+c:\code> py −3 decoall-meta.py
+call 1 to __init__
+call 2 to __init__
+Bob Smith Sue Jones
+call 1 to giveRaise
+110000.00
+call 1 to lastName
+call 2 to lastName
+Smith Jones
+```
+
+我们这里看到的就是装饰器和元类组合工作的结果——在类创建的时候，元类自动把函数装饰器应用于每个方法，并且函数装饰器自动拦截方法调用，以便在此输出中打印出跟踪消息。这一组合能够有效，得益于两种工具的通用性。
+
+#### 把任何装饰器用于方法
+
+```python
+# Metaclass factory: apply any decorator to all methods of a class
+from types import FunctionType
+from decotools import tracer, timer
+
+def decorateAll(decorator):
+    class MetaDecorate(type):
+        def __new__(meta, classname, supers, classdict):
+            for attr, attrval in classdict.items():
+                if type(attrval) is FunctionType:
+                    classdict[attr] = decorator(attrval)
+            return type.__new__(meta, classname, supers, classdict)
+    return MetaDecorate   # 返回元类
+
+class Person(metaclass=decorateAll(tracer)): # Apply a decorator to all
+    def __init__(self, name, pay):
+        self.name = name
+        self.pay = pay
+    def giveRaise(self, percent):
+        self.pay *= (1.0 + percent)
+    def lastName(self):
+        return self.name.split()[-1]
+
+bob = Person('Bob Smith', 50000)
+sue = Person('Sue Jones', 100000)
+print(bob.name, sue.name)
+sue.giveRaise(.10)
+print('%.2f' % sue.pay)
+print(bob.lastName(), sue.lastName())
+```
+
+当这段代码运行的时候，输出再次与前面的示例相同——最终我们仍然在一个客户类中用跟踪器函数装饰器装饰了每个方法，但是，我们以一种更为通用的方式做到了这点：
+
+```
+c:\code> py −3 decoall-meta-any.py
+call 1 to __init__
+call 2 to __init__
+Bob Smith Sue Jones
+call 1 to giveRaise
+110000.00
+call 1 to lastName
+call 2 to lastName
+Smith Jones
+```
+
+现在，要对方法应用一种不同的装饰器，我们只要在类标题行替换装饰器名称。例如，要使用前面介绍的计时器函数装饰器，定义类的时候，我们可以使用如下示例标题行的最后两行中的任何一个——第一个接收了定时器的默认参数，第二个指定了标签文本：
+
+```python
+class Person(metaclass=decorateAll(tracer)):                # Apply tracer
+class Person(metaclass=decorateAll(timer())):               # Apply timer, defaults
+class Person(metaclass=decorateAll(timer(label='**'))):     # Decorator arguments
+```
+
+
+
+#### 元类VS类装饰器：第3回合
+
+如下的版本，用一个类装饰器替换了前面的示例中的元类。它定义并使用一个类装饰器，该装饰器把一个函数装饰器应用于一个类的所有方法。
+
+```python
+# Class decorator factory: apply any decorator to all methods of a class
+from types import FunctionType
+from decotools import tracer, timer
+
+def decorateAll(decorator):
+    def DecoDecorate(aClass):
+        for attr, attrval in aClass.__dict__.items():
+            if type(attrval) is FunctionType:
+                setattr(aClass, attr, decorator(attrval)) # Not __dict__
+        return aClass
+    return DecoDecorate
+
+@decorateAll(tracer)                        # Use a class decorator
+class Person:                               # Applies func decorator to methods
+    def __init__(self, name, pay):          # Person = decorateAll(..)(Person)
+        self.name = name                    # Person = DecoDecorate(Person)
+        self.pay = pay
+    def giveRaise(self, percent):
+        self.pay *= (1.0 + percent)
+    def lastName(self):
+        return self.name.split()[-1]
+
+bob = Person('Bob Smith', 50000)
+sue = Person('Sue Jones', 100000)
+print(bob.name, sue.name)
+sue.giveRaise(.10)
+print('%.2f' % sue.pay)
+print(bob.lastName(), sue.lastName())
+```
+
+当这段代码运行的时候，类装饰器把跟踪器函数装饰器应用于每个方法，并且在调用时产生一条跟踪消息（输出和本示例前面的元类版本相同）：
+
+```
+c:\code> py −3 decoall-deco-any.py
+call 1 to __init__
+call 2 to __init__
+Bob Smith Sue Jones
+call 1 to giveRaise
+110000.00
+call 1 to lastName
+call 2 to lastName
+Smith Jones
+```
+
+同样地，使用类装饰器也可以像下面这样处理参数：
+
+```python
+@decorateAll(tracer) # Decorate all with tracer
+@decorateAll(timer()) # Decorate all with timer, defaults
+@decorateAll(timer(label='@@')) # Same but pass a decorator argument
+```
+
+正如你所看到的，元类和类装饰器不仅常常可以交换，而且通常是互补的。它们都对于定制和管理类和实例对象，提供了高级但强大的方法，因为这二者最终都允许我们在类创建过程中插入代码。尽管某些高级应用可能用一种方式或另一种方式编码更好，但在很多情况下，我们选择或组合这两种工具的方法，很大程度上取决于你。
 
 
 
@@ -6154,6 +6476,4 @@ print(bob.pay()) # Triggers __getattr__
 ---
 
 
-
-## 第41章 所有好东西
 
