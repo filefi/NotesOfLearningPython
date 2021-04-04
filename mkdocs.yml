@@ -1,0 +1,11 @@
+site_name: Python学习手册笔记
+nav:
+  - Part_1_Getting_Started.md
+  - Part_2_Types_and_Operations.md
+  - Part_3_Statements_and_Syntax.md
+  - Part_4_Functions_and_Generators.md
+  - Part_5_Modules_and_Packages.md
+  - Part_6_Classes_and_OOP.md
+  - Part_7_Exceptions_and_Tools.md
+  - Part_8_Advanced_Topics.md
+theme: readthedocs

@@ -1197,11 +1197,11 @@ Error at: spam.txt 40
 
 嵌套的`try`/`except`语句：当异常引发时（由你或由Python引起），控制权会跳回具有相符的`except`子句、最近进入的`try`语句，而程序会在`try`语句后继续执行下去。`except`子句会拦截并停止异常，这里就是你处理异常并从中恢复的地方。
 
-![1561796521461](_static/images/Part_7_Exceptions_and_Tools.assets/1561796521461.png)
+![1561796521461](img/Part_7_Exceptions_and_Tools.assets/1561796521461.png)
 
 嵌套的`try`/`finally`：当异常在这里引发时，控制权会回到最近进入的`try`去执行其`finally`语句，异常会持续传播到所有激活状态下`try`语句的`finally`，直到最终抵达默认顶层处理器，在那里打印出错消息。`finally`子句会拦截（但不会停止）异常：只是定义了离开前要执行的动作而已。
 
-![1561796549628](_static/images/Part_7_Exceptions_and_Tools.assets/1561796549628.png)
+![1561796549628](img/Part_7_Exceptions_and_Tools.assets/1561796549628.png)
 
 换句话说，引发异常时，程序去向何处完全取决于异常在何处发生：这是脚本运行是控制流程的函数，而不仅仅是其语法。异常的传递，基本上就是回到处理先前进入但尚未离开的`try`。只要控制权碰到相符的`except`子句，传递就会停止，而通过`finally`子句时就不会。
 

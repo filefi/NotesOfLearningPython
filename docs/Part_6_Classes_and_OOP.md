@@ -30,7 +30,7 @@ object.attribute
 
 下图是搜索树的一个例子：
 
-![Figure 26-1](_static/images/Part_6_Classes_and_OOP.assets/1555603030106.png)
+![Figure 26-1](img/Part_6_Classes_and_OOP.assets/1555603030106.png)
 
 上图中，类树的底端有2个实例`I1`和`I2`，在它们之上有个类`C1`，而顶端有2个超类`C2`和`C3`。所有这些对象都是命名空间（变量的封装），而继承就是由下而上搜索此对象树，来寻找属性名称所出现的最低的地方。
 
@@ -180,7 +180,7 @@ print(I1.name)              # Prints 'bob'
 
 如下图所示，建立实例`x`和`y`后，实际有3个对象，即2个实例对象和1个类对象；同时也有了三个连接的命名空间：
 
-![Figure 27-1](_static/images/Part_6_Classes_and_OOP.assets/1555818374206.png)
+![Figure 27-1](img/Part_6_Classes_and_OOP.assets/1555818374206.png)
 
 类和实例是类树中通过继承搜索的相连的命名空间。这里的`data`属性会在实例内找到，但是`setdata`和`display`则是在它们之上的类中找到的。
 
@@ -252,7 +252,7 @@ Current value = "42"
 
 下图描绘了上面操作涉及的命名空间：
 
-![Figure 27-2](_static/images/Part_6_Classes_and_OOP.assets/1555841428600.png)
+![Figure 27-2](img/Part_6_Classes_and_OOP.assets/1555841428600.png)
 
 #### 类是模块内的属性
 当`class`语句执行时，这只是赋值给对象的变量，而对象可以用到任何普通表达式引用。
@@ -1408,7 +1408,7 @@ I = Sub(1, 2)
 - 类属性是通过`class`语句内的语句（赋值语句）而生成的。
 - 超类的连接是通过`class`语句首行的括号内列出类而生成的。
 
-![Figure 29-1](_static/images/Part_6_Classes_and_OOP.assets/1556719020836.png)
+![Figure 29-1](img/Part_6_Classes_and_OOP.assets/1556719020836.png)
 
 
 #### 继承方法的专有化
